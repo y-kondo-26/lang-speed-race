@@ -1,0 +1,163 @@
+
+// ---------- シミュレーション ----------
+const VCAP = 1.2;      // 絵が1秒に進める実行回数の上限（速い言語の絵が点滅しないようにする）
+const FASTBAR = 2;     // 1秒に2回を超えて終わる言語は、進捗バーを満タンで表示する
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const S = { bench: "n-body", metric: "secs", plain: true, mode: "loop", speed: 1,
+  running: !reduceMotion, simT: 0, realT: 0, lanes: [] };
+let colors = {};
+
+function readColors() {
+  colors = { ink2: cssv("--ink-2"), grid: cssv("--grid"), track: cssv("--track"), surface: cssv("--surface") };
+  for (const L of LANGS) colors[L.id] = cssv(L.css);
+}
+
+function buildLanes() {
+  const box = document.getElementById("lanes");
+  box.textContent = "";
+  S.lanes = LANGS.map(L => {
+    const row = pick(S.bench, L.id, S.metric, S.plain);
+    const el = document.createElement("div");
+    el.className = "lane" + (row ? "" : " missing");
+    el.innerHTML = `<div class="lname"><i class="swatch"></i><div><b></b><span class="impl"></span><span class="prog"></span></div></div>
+      <canvas aria-hidden="true"></canvas>
+      <div class="tcol"><div class="track"><div class="fill"></div><div class="runner"></div></div>
+        <div class="tmeta"><span class="pct tabnum"></span><span class="rate tabnum"></span></div></div>
+      <div class="lstat"></div>`;
+    el.querySelector(".swatch").style.background = `var(${L.css})`;
+    el.querySelector(".fill").style.background = `var(${L.css})`;
+    el.querySelector(".runner").style.background = `var(${L.css})`;
+    el.querySelector("b").textContent = L.name;
+    el.querySelector(".impl").textContent = L.impl;
+    const prog = el.querySelector(".prog");
+    if (row) {
+      const a = document.createElement("a");
+      a.href = SRC + row.prog + ".html"; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "ソース: " + row.label + (row.flagged ? "（印あり）" : "");
+      prog.appendChild(a);
+    } else {
+      prog.textContent = "条件に合うプログラムなし";
+    }
+    box.appendChild(el);
+    const cv = el.querySelector("canvas");
+    return { L, row, secs: row ? row[S.metric] : null, t: 0, vt: 0, el, cv, ctx: cv.getContext("2d"),
+      fill: el.querySelector(".fill"), runner: el.querySelector(".runner"),
+      pct: el.querySelector(".pct"), rate: el.querySelector(".rate"), stat: el.querySelector(".lstat") };
+  });
+  const fastest = Math.min(...S.lanes.filter(l => l.secs).map(l => l.secs));
+  S.lanes.forEach(l => { l.ratio = l.secs ? l.secs / fastest : null; });
+  sizeCanvases();
+  resetClock();
+  describe();
+}
+
+function sizeCanvases() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const l of S.lanes) {
+    const r = l.cv.getBoundingClientRect();
+    l.cv.width = Math.round(r.width * dpr); l.cv.height = Math.round(r.height * dpr);
+    l.w = r.width; l.h = r.height; l.dpr = dpr;
+  }
+}
+
+function resetClock() {
+  S.simT = 0; S.realT = 0;
+  for (const l of S.lanes) { l.t = 0; l.vt = 0; l.finishedRank = null; }
+  S.finishCount = 0;
+  render(0);
+}
+
+function describe() {
+  const b = BENCH.find(b => b.id === S.bench);
+  const d = document.getElementById("bdesc");
+  d.textContent = "";
+  const strong = document.createElement("b"); strong.textContent = b.id;
+  d.append(strong, `（${b.group}）　${b.desc}`);
+}
+
+function step(dt) {
+  S.realT += dt; S.simT += dt * S.speed;
+  // 動く絵（軌道・パンケーキ・塩基の列）は、最速の言語が VCAP を超えないように全レーンを同じ比率で遅くする
+  const live = S.lanes.filter(l => l.secs), k = Math.min(1, VCAP / (S.speed / Math.min(...live.map(l => l.secs))));
+  for (const l of live) {
+    const rate = S.speed / l.secs;                 // 1秒あたりに終わる回数（画面の時間で）
+    l.t = S.simT / l.secs;
+    if (!(S.mode === "race" && l.t >= 1)) l.vt += rate * k * dt;
+    if (S.mode === "race" && l.t >= 1 && l.finishedRank == null) {
+      // 同じフレームで複数の言語がゴールしても、順位は測定時間の順にする
+      l.finishedRank = 1 + live.filter(o => o.secs < l.secs).length; S.finishCount++;
+    }
+  }
+  if (S.mode === "race" && S.finishCount === S.lanes.filter(l => l.secs).length) setRunning(false);
+}
+
+function render() {
+  const clock = S.mode === "race" ? Math.min(S.simT, Math.max(...S.lanes.filter(l => l.secs).map(l => l.secs))) : S.simT;
+  document.getElementById("clock").textContent = fmtClock(clock);
+  document.getElementById("clocksub").textContent =
+    `測定時間に換算した経過時間（${S.metric === "secs" ? "経過時間" : "CPU 時間"}）・再生速度 ×${S.speed}・画面で見ている時間 ${fmtClock(S.realT)}`;
+  for (const l of S.lanes) drawLane(l);
+  verdict();
+}
+
+function drawLane(l) {
+  const c = l.ctx;
+  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, l.cv.width, l.cv.height);
+  if (!l.secs) {
+    l.stat.textContent = "—"; l.pct.textContent = ""; l.rate.textContent = "";
+    l.fill.style.width = "0"; l.runner.style.display = "none"; return;
+  }
+  const race = S.mode === "race", rate = S.speed / l.secs;
+  const done = race && l.t >= 1;
+  let ph = race ? Math.min(1, l.t) : l.t % 1;
+  const fastBar = !race && rate > FASTBAR;
+  // 描き上げる絵（マンデルブロ集合など）は、1秒に VCAP 回を超えて終わる言語では完成した絵を表示し続ける
+  const vph = race ? ph : (rate > VCAP ? 1 : ph);
+  c.setTransform(l.dpr, 0, 0, l.dpr, 0, 0);
+  VIZ[BENCH.find(b => b.id === S.bench).viz](c, l.w, l.h,
+    { ph: vph, vt: l.vt, col: colors[l.L.id], ink2: colors.ink2, grid: colors.grid, track: colors.track, dpr: l.dpr });
+  const shown = fastBar ? 1 : ph;
+  l.fill.style.width = (shown * 100) + "%";
+  l.runner.style.display = fastBar ? "none" : "";
+  l.runner.style.left = (shown * 100) + "%";
+  l.pct.textContent = fastBar ? "速すぎるのでバーは満タンで表示" : `今回の進み ${(ph * 100).toFixed(ph < 0.1 ? 1 : 0)}%`;
+  l.rate.textContent = rate >= 1 ? `1秒に ${fmtX(rate)} 回` : `1回に ${fmtX(1 / rate)} 秒`;
+  const mb = l.row.memKiB / 1024, mem = mb >= 1000 ? (mb / 1024).toFixed(1) + " GB" : mb.toFixed(1) + " MB";
+  const one = `<span class="big tabnum">${fmtSec(l.secs)}</span><span class="sub">最速の ${fmtX(l.ratio)} 倍・メモリ ${mem}</span>`;
+  const tail = race
+    ? (done ? `<span class="done">ゴール ${l.finishedRank} 位</span>` : `<span>走行中</span>`)
+    : `<span class="done tabnum">完了 ${Math.floor(l.t).toLocaleString("ja-JP")} 回</span>`;
+  l.stat.innerHTML = one + tail;
+}
+
+function verdict() {
+  const v = document.getElementById("verdict");
+  const ok = S.lanes.filter(l => l.secs).sort((a, b) => b.secs - a.secs);
+  if (ok.length < 2) { v.textContent = ""; return; }
+  const slow = ok[0], parts = ok.slice(1).reverse().map(l => `${l.L.name} は ${fmtX(slow.secs / l.secs)} 回`);
+  let s = `いちばん遅い ${slow.L.name} が1回解き終えるまでに、${parts.join("、")}解き終えます。`;
+  if (S.mode === "race") {
+    const fin = S.lanes.filter(l => l.finishedRank).sort((a, b) => a.finishedRank - b.finishedRank);
+    s = fin.length ? "ゴール順: " + fin.map(l => `${l.finishedRank}位 ${l.L.name}（${fmtSec(l.secs)}）`).join("、") + "。" + (fin.length < ok.length ? "残りの言語はまだ走っています。" : "") : s;
+  }
+  const miss = S.lanes.filter(l => !l.secs).map(l => l.L.name);
+  if (miss.length) s += `${miss.join("・")} は、この条件に合う正しく動いたプログラムがありません。「最速の実装」を選ぶと表示されます。`;
+  v.textContent = s;
+}
+
+let last = null;
+function loop(ts) {
+  if (last != null && S.running) step(Math.min(0.1, (ts - last) / 1000));
+  last = ts;
+  if (S.running || needsDraw) { render(); needsDraw = false; }
+  requestAnimationFrame(loop);
+}
+let needsDraw = true;
+
+function setRunning(on) {
+  S.running = on;
+  const b = document.getElementById("play");
+  b.textContent = on ? "一時停止" : "再生";
+  b.setAttribute("aria-label", on ? "一時停止" : "再生");
+  needsDraw = true;
+}

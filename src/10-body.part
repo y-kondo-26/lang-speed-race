@@ -1,0 +1,93 @@
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>5言語の速さ比べ</h1>
+  <p class="lead">C++・Rust・Go・JavaScript（Node.js）・Python が同じ問題を解いたときの実測時間を、アニメーションで再生します。数値は The Computer Language Benchmarks Game が公開している測定結果です。このページのブラウザがベンチマークを実行しているわけではありません。</p>
+</header>
+
+<section id="sim" aria-labelledby="sim-h">
+  <h2 id="sim-h">同じ問題を5つの言語に同時に解かせる</h2>
+  <p class="note">問題を選ぶと、5つのレーンが測定時間どおりの速さで進みます。「繰り返し」では各言語が問題を解き終わるたびに最初から解き直し、解いた回数を数えます。</p>
+  <div class="chips" id="chips" role="group" aria-label="ベンチマーク"></div>
+  <p class="bench-desc" id="bdesc"></p>
+  <div class="controls" role="group" aria-label="再生の設定">
+    <div class="ctl"><span class="lbl">指標</span>
+      <div class="seg" data-key="metric">
+        <button data-v="secs" aria-pressed="true">経過時間</button><button data-v="cpu" aria-pressed="false">CPU 時間</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">実装</span>
+      <div class="seg" data-key="plain">
+        <button data-v="1" aria-pressed="true">手書き最適化を除く</button><button data-v="0" aria-pressed="false">最速の実装</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">見せ方</span>
+      <div class="seg" data-key="mode">
+        <button data-v="loop" aria-pressed="true">繰り返し</button><button data-v="race" aria-pressed="false">1回勝負</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">再生速度</span>
+      <div class="seg" data-key="speed">
+        <button data-v="0.25" aria-pressed="false">×0.25</button><button data-v="1" aria-pressed="true">×1</button><button data-v="10" aria-pressed="false">×10</button><button data-v="100" aria-pressed="false">×100</button>
+      </div></div>
+    <div class="ctl">
+      <button class="btn" id="play" aria-label="一時停止">一時停止</button>
+      <button class="btn" id="reset">最初から</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="clock">
+      <div><span class="t tabnum" id="clock">0:00.0</span></div>
+      <div class="sub" id="clocksub"></div>
+    </div>
+    <div id="lanes"></div>
+    <div class="verdict" id="verdict" aria-live="polite"></div>
+  </div>
+</section>
+
+<section id="sum" aria-labelledby="sum-h">
+  <h2 id="sum-h">10種類のベンチマークをまとめて比べる</h2>
+  <p class="note">横軸は、その問題でいちばん速かった言語の時間を 1 としたときの時間の比です。目盛は対数で、右にあるほど時間がかかります。指標と実装の設定は上のシミュレーションと同じものを使います。行を押すと、上のシミュレーションがその問題に切り替わります。</p>
+  <div class="legend" id="legend"></div>
+  <div class="card" style="padding:10px 12px">
+    <svg id="dotplot" role="img" aria-label="ベンチマークごとの、最速の言語に対する時間の比"></svg>
+  </div>
+  <details class="tbl">
+    <summary>表で見る（秒と最速との比）</summary>
+    <div class="tscroll"><table id="table"></table></div>
+  </details>
+</section>
+
+<section aria-labelledby="why-h">
+  <h2 id="why-h">なぜ差が出るのか</h2>
+  <p class="note">5つの言語は、ソースコードを機械語にするタイミングと、メモリを回収するしくみが異なります。</p>
+  <div class="models">
+    <div class="model"><h3>C++</h3><div class="tag">事前コンパイル（AOT）・GC なし</div>
+      <p>g++ が実行前にソースコードを機械語へ変換し、時間をかけて最適化します。メモリをいつ解放するかはプログラムが決めるので、実行中に GC（使わなくなったメモリを自動で回収する処理）は動きません。</p></div>
+    <div class="model"><h3>Rust</h3><div class="tag">事前コンパイル（AOT）・GC なし</div>
+      <p>rustc が LLVM を使って実行前に機械語へ変換します。所有権という規則によって、メモリを解放する位置をコンパイラが決めます。C++ と同じく実行中の GC がなく、10種類の多くの問題で C++ と Rust が1位と2位を占めます。</p></div>
+    <div class="model"><h3>Go</h3><div class="tag">事前コンパイル（AOT）・GC あり</div>
+      <p>Go のコンパイラも実行前に機械語へ変換します。Go のコンパイラはコンパイルの速さを重視しており、一般に GCC や LLVM ほど最適化を重ねません。メモリは GC が回収するので、メモリの確保と解放が多い binary-trees で差が大きくなります。</p></div>
+    <div class="model"><h3>JavaScript</h3><div class="tag">JIT コンパイル・GC あり</div>
+      <p>Node.js の V8 エンジンは、最初はバイトコードを解釈して実行し、何度も実行される部分を実行中に機械語へ変換します（JIT コンパイル）。変数の型は実行するまで決まらないので、V8 は実際に来た型を記録してから機械語を作ります。</p></div>
+    <div class="model"><h3>Python</h3><div class="tag">インタプリタ・GC あり</div>
+      <p>CPython はソースコードをバイトコードに変換し、バイトコードを1命令ずつ解釈して実行します。整数や小数も1個ずつオブジェクトとして扱うので、足し算1回ごとに型の確認とメモリの操作が発生します。計算をループで書く問題では、最速の言語の約20〜200倍の時間がかかります。</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="cav-h">
+  <h2 id="cav-h">読むときの注意</h2>
+  <div class="card">
+  <ol class="cav">
+    <li>Benchmarks Game は、Intel Core i5-3330（2012年発売、4コア 3.0GHz）、メモリ 15.8GiB、Ubuntu 24.04 のマシンで、2025年1〜2月に測定しています。今の PC ではどの言語も時間が短くなるので、このページは言語どうしの比を比べるために使ってください。</li>
+    <li>「経過時間」はプログラムの開始から終了までの実際の時間です。4コアを同時に使うプログラムは経過時間が短くなります。「CPU 時間」は4コアが使った時間の合計で、並列化の効果を含めずに比べたいときに選びます。</li>
+    <li>Benchmarks Game は、SIMD 命令を手で書いたプログラム、unsafe を使ったプログラム、C の関数を直接呼ぶプログラムに印を付けています。「手書き最適化を除く」を選ぶと、印の付いたプログラムを除いた中で最も速いプログラムを使います。</li>
+    <li>Python のプログラムは NumPy を使わず、標準ライブラリだけで書かれています（pidigits の gmpy2 と、ctypes で呼ぶ GMP・PCRE2 を除く）。NumPy のように C で書かれたライブラリに計算を任せると、Python の時間は大きく短くなります。</li>
+    <li>pidigits・regex-redux・reverse-complement では、時間の大半を C で書かれた部分（多倍長整数の GMP、正規表現エンジン、バイト列の変換）が使います。このため Python と他の言語の差が小さくなります。</li>
+    <li>プログラムは有志が寄稿したもので、言語ごとに最適化にかけた手間が異なります。各レーンの「ソース」のリンクから、実際に測定したプログラムを読めます。</li>
+  </ol>
+  </div>
+</section>
+
+<footer>
+  出典: Isaac Gouy. (n. d.). <a href="https://benchmarksgame-team.pages.debian.net/benchmarksgame/" rel="noopener">The Computer Language Benchmarks Game</a>（言語ペア比較ページ、2026年11月24日取得）。測定したバージョン: g++ 14.2.0、rustc 1.84.1、Go 1.23.1、Node.js 23.8.0、CPython 3.13.0。
+</footer>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>

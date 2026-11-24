@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>5言語の速さ比べ</title>
+<meta name="description" content="C++・Rust・Go・JavaScript・Python が同じ問題を解いた実測時間（The Computer Language Benchmarks Game）を、アニメーションで再生して比べるページ">
+<style>
+:root {
+  color-scheme: light;
+  --plane: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ring: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --c-cpp: #2a78d6;
+  --c-rust: #eb6834;
+  --c-go: #1baf7a;
+  --c-node: #eda100;
+  --c-python: #e87ba4;
+  --track: #ebeae5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #9a988f;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --ring: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --c-cpp: #3987e5;
+    --c-rust: #d95926;
+    --c-go: #199e70;
+    --c-node: #c98500;
+    --c-python: #d55181;
+    --track: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #9a988f;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --ring: rgba(255,255,255,0.10);
+  --accent: #3987e5;
+  --c-cpp: #3987e5;
+  --c-rust: #d95926;
+  --c-go: #199e70;
+  --c-node: #c98500;
+  --c-python: #d55181;
+  --track: #2c2c2a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.7 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", "Noto Sans JP", sans-serif;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: 40px 0 8px; }
+h1 { font-size: 30px; line-height: 1.3; margin: 0 0 8px; letter-spacing: .01em; }
+h2 { font-size: 21px; line-height: 1.4; margin: 0 0 6px; }
+h3 { font-size: 16px; margin: 0 0 4px; }
+p { margin: 0 0 10px; }
+.lead { color: var(--ink-2); max-width: 760px; }
+.note { color: var(--muted); font-size: 13px; }
+a { color: var(--accent); }
+section { margin: 28px 0; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 12px;
+  padding: 18px;
+}
+.tabnum { font-variant-numeric: tabular-nums; }
+
+/* ---- controls ---- */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 0 0 12px; }
+.ctl { display: flex; align-items: center; gap: 8px; }
+.ctl > .lbl { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 8px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 13px; padding: 4px 10px; border: 0; background: transparent;
+  color: var(--ink-2); cursor: pointer; border-right: 1px solid var(--axis);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible, .chip:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn {
+  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface); color: var(--ink);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.chip {
+  font: inherit; font-size: 13px; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface); color: var(--ink-2);
+}
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.bench-desc { margin: 4px 0 14px; color: var(--ink-2); font-size: 14px; }
+.bench-desc b { color: var(--ink); }
+
+/* ---- race ---- */
+.clock { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; margin-bottom: 10px; }
+.clock .t { font-size: 26px; font-weight: 600; }
+.clock .sub { color: var(--muted); font-size: 13px; }
+.lane {
+  display: grid; grid-template-columns: 132px 140px minmax(0,1fr) 196px; gap: 14px;
+  align-items: center; padding: 10px 0; border-top: 1px solid var(--grid);
+}
+.lane:first-of-type { border-top: 0; }
+.lname { display: flex; gap: 8px; align-items: flex-start; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; margin-top: 7px; flex: none; }
+.lname b { display: block; font-size: 15px; }
+.lname span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.lane canvas { width: 140px; height: 84px; border-radius: 8px; background: var(--surface-2); display: block; }
+.track { position: relative; height: 12px; border-radius: 999px; background: var(--track); }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; width: 0; }
+.runner {
+  position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface); left: 0;
+}
+.tmeta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; gap: 8px; }
+.lstat { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.lstat .big { font-size: 20px; font-weight: 600; color: var(--ink); }
+.lstat .done { color: var(--ink); font-weight: 600; }
+.lstat > span { display: block; }
+.lane.missing { opacity: .55; }
+.verdict { margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; font-size: 14px; }
+
+/* ---- summary chart ---- */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); margin: 8px 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { overflow: visible; }
+#dotplot { width: 100%; display: block; }
+#dotplot .rowhit { fill: transparent; cursor: pointer; }
+#dotplot .rowhit:hover, #dotplot .rowhit:focus { fill: var(--surface-2); outline: none; }
+#dotplot text { fill: var(--ink-2); font-size: 12px; }
+#dotplot .rlabel { fill: var(--ink); font-size: 13px; }
+#dotplot .glabel { fill: var(--muted); font-size: 11px; }
+#dotplot .grid { stroke: var(--grid); stroke-width: 1; }
+#dotplot .base { stroke: var(--axis); stroke-width: 1; }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 190px; display: none;
+}
+.tip .h { font-weight: 600; margin-bottom: 4px; font-size: 13px; }
+.tip .m { color: var(--muted); margin: -2px 0 4px; }
+.tip .r { display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: center; }
+.tip .r i { display: block; height: 2px; border-radius: 2px; }
+.tip .r b { font-variant-numeric: tabular-nums; }
+details.tbl { margin-top: 10px; }
+details.tbl summary { cursor: pointer; color: var(--ink-2); font-size: 14px; }
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13px; margin-top: 8px; min-width: 640px; width: 100%; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: right; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; }
+
+/* ---- explanation ---- */
+.models { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.model { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; font-size: 14px; }
+.model .tag { font-size: 12px; color: var(--muted); }
+ol.cav { padding-left: 1.3em; margin: 0; }
+ol.cav li { margin-bottom: 8px; }
+footer { padding: 24px 0 48px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 760px) {
+  h1 { font-size: 24px; }
+  .lane { grid-template-columns: minmax(0,1fr) 100px; grid-template-areas: "name canvas" "stat canvas" "track track"; gap: 2px 12px; padding: 8px 0; }
+  .lname { grid-area: name; }
+  .lname .impl { display: none; }
+  .lane canvas { grid-area: canvas; width: 100px; height: 60px; }
+  .lane .tcol { grid-area: track; margin-top: 4px; }
+  .lstat { grid-area: stat; font-size: 12px; line-height: 1.45; }
+  .lstat .big { font-size: 16px; }
+  .lstat > span { display: inline; margin-right: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runner { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>5言語の速さ比べ</h1>
+  <p class="lead">C++・Rust・Go・JavaScript（Node.js）・Python が同じ問題を解いたときの実測時間を、アニメーションで再生します。数値は The Computer Language Benchmarks Game が公開している測定結果です。このページのブラウザがベンチマークを実行しているわけではありません。</p>
+</header>
+
+<section id="sim" aria-labelledby="sim-h">
+  <h2 id="sim-h">同じ問題を5つの言語に同時に解かせる</h2>
+  <p class="note">問題を選ぶと、5つのレーンが測定時間どおりの速さで進みます。「繰り返し」では各言語が問題を解き終わるたびに最初から解き直し、解いた回数を数えます。</p>
+  <div class="chips" id="chips" role="group" aria-label="ベンチマーク"></div>
+  <p class="bench-desc" id="bdesc"></p>
+  <div class="controls" role="group" aria-label="再生の設定">
+    <div class="ctl"><span class="lbl">指標</span>
+      <div class="seg" data-key="metric">
+        <button data-v="secs" aria-pressed="true">経過時間</button><button data-v="cpu" aria-pressed="false">CPU 時間</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">実装</span>
+      <div class="seg" data-key="plain">
+        <button data-v="1" aria-pressed="true">手書き最適化を除く</button><button data-v="0" aria-pressed="false">最速の実装</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">見せ方</span>
+      <div class="seg" data-key="mode">
+        <button data-v="loop" aria-pressed="true">繰り返し</button><button data-v="race" aria-pressed="false">1回勝負</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">再生速度</span>
+      <div class="seg" data-key="speed">
+        <button data-v="0.25" aria-pressed="false">×0.25</button><button data-v="1" aria-pressed="true">×1</button><button data-v="10" aria-pressed="false">×10</button><button data-v="100" aria-pressed="false">×100</button>
+      </div></div>
+    <div class="ctl">
+      <button class="btn" id="play" aria-label="一時停止">一時停止</button>
+      <button class="btn" id="reset">最初から</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="clock">
+      <div><span class="t tabnum" id="clock">0:00.0</span></div>
+      <div class="sub" id="clocksub"></div>
+    </div>
+    <div id="lanes"></div>
+    <div class="verdict" id="verdict" aria-live="polite"></div>
+  </div>
+</section>
+
+<section id="sum" aria-labelledby="sum-h">
+  <h2 id="sum-h">10種類のベンチマークをまとめて比べる</h2>
+  <p class="note">横軸は、その問題でいちばん速かった言語の時間を 1 としたときの時間の比です。目盛は対数で、右にあるほど時間がかかります。指標と実装の設定は上のシミュレーションと同じものを使います。行を押すと、上のシミュレーションがその問題に切り替わります。</p>
+  <div class="legend" id="legend"></div>
+  <div class="card" style="padding:10px 12px">
+    <svg id="dotplot" role="img" aria-label="ベンチマークごとの、最速の言語に対する時間の比"></svg>
+  </div>
+  <details class="tbl">
+    <summary>表で見る（秒と最速との比）</summary>
+    <div class="tscroll"><table id="table"></table></div>
+  </details>
+</section>
+
+<section aria-labelledby="why-h">
+  <h2 id="why-h">なぜ差が出るのか</h2>
+  <p class="note">5つの言語は、ソースコードを機械語にするタイミングと、メモリを回収するしくみが異なります。</p>
+  <div class="models">
+    <div class="model"><h3>C++</h3><div class="tag">事前コンパイル（AOT）・GC なし</div>
+      <p>g++ が実行前にソースコードを機械語へ変換し、時間をかけて最適化します。メモリをいつ解放するかはプログラムが決めるので、実行中に GC（使わなくなったメモリを自動で回収する処理）は動きません。</p></div>
+    <div class="model"><h3>Rust</h3><div class="tag">事前コンパイル（AOT）・GC なし</div>
+      <p>rustc が LLVM を使って実行前に機械語へ変換します。所有権という規則によって、メモリを解放する位置をコンパイラが決めます。C++ と同じく実行中の GC がなく、10種類の多くの問題で C++ と Rust が1位と2位を占めます。</p></div>
+    <div class="model"><h3>Go</h3><div class="tag">事前コンパイル（AOT）・GC あり</div>
+      <p>Go のコンパイラも実行前に機械語へ変換します。Go のコンパイラはコンパイルの速さを重視しており、一般に GCC や LLVM ほど最適化を重ねません。メモリは GC が回収するので、メモリの確保と解放が多い binary-trees で差が大きくなります。</p></div>
+    <div class="model"><h3>JavaScript</h3><div class="tag">JIT コンパイル・GC あり</div>
+      <p>Node.js の V8 エンジンは、最初はバイトコードを解釈して実行し、何度も実行される部分を実行中に機械語へ変換します（JIT コンパイル）。変数の型は実行するまで決まらないので、V8 は実際に来た型を記録してから機械語を作ります。</p></div>
+    <div class="model"><h3>Python</h3><div class="tag">インタプリタ・GC あり</div>
+      <p>CPython はソースコードをバイトコードに変換し、バイトコードを1命令ずつ解釈して実行します。整数や小数も1個ずつオブジェクトとして扱うので、足し算1回ごとに型の確認とメモリの操作が発生します。計算をループで書く問題では、最速の言語の約20〜200倍の時間がかかります。</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="cav-h">
+  <h2 id="cav-h">読むときの注意</h2>
+  <div class="card">
+  <ol class="cav">
+    <li>Benchmarks Game は、Intel Core i5-3330（2012年発売、4コア 3.0GHz）、メモリ 15.8GiB、Ubuntu 24.04 のマシンで、2025年1〜2月に測定しています。今の PC ではどの言語も時間が短くなるので、このページは言語どうしの比を比べるために使ってください。</li>
+    <li>「経過時間」はプログラムの開始から終了までの実際の時間です。4コアを同時に使うプログラムは経過時間が短くなります。「CPU 時間」は4コアが使った時間の合計で、並列化の効果を含めずに比べたいときに選びます。</li>
+    <li>Benchmarks Game は、SIMD 命令を手で書いたプログラム、unsafe を使ったプログラム、C の関数を直接呼ぶプログラムに印を付けています。「手書き最適化を除く」を選ぶと、印の付いたプログラムを除いた中で最も速いプログラムを使います。</li>
+    <li>Python のプログラムは NumPy を使わず、標準ライブラリだけで書かれています（pidigits の gmpy2 と、ctypes で呼ぶ GMP・PCRE2 を除く）。NumPy のように C で書かれたライブラリに計算を任せると、Python の時間は大きく短くなります。</li>
+    <li>pidigits・regex-redux・reverse-complement では、時間の大半を C で書かれた部分（多倍長整数の GMP、正規表現エンジン、バイト列の変換）が使います。このため Python と他の言語の差が小さくなります。</li>
+    <li>プログラムは有志が寄稿したもので、言語ごとに最適化にかけた手間が異なります。各レーンの「ソース」のリンクから、実際に測定したプログラムを読めます。</li>
+  </ol>
+  </div>
+</section>
+
+<footer>
+  出典: Isaac Gouy. (n. d.). <a href="https://benchmarksgame-team.pages.debian.net/benchmarksgame/" rel="noopener">The Computer Language Benchmarks Game</a>（言語ペア比較ページ、2026年11月24日取得）。測定したバージョン: g++ 14.2.0、rustc 1.84.1、Go 1.23.1、Node.js 23.8.0、CPython 3.13.0。
+</footer>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script>
+// 出典: The Computer Language Benchmarks Game（fastest/*.html、2026-11-24 取得）。tools/extract.py で生成
+const ROWS = [{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-7","label":"C++ g++ #7","flagged":false,"secs":1.01,"cpu":3.54,"memKiB":175108},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-5","label":"C++ g++ #5","flagged":false,"secs":1.17,"cpu":4.14,"memKiB":208171},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-9","label":"C++ g++ #9","flagged":false,"secs":1.76,"cpu":4.74,"memKiB":140571},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-6","label":"C++ g++ #6","flagged":false,"secs":1.93,"cpu":5.0,"memKiB":273973},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-4","label":"C++ g++ #4","flagged":false,"secs":2.22,"cpu":5.27,"memKiB":273977},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-3","label":"C++ g++ #3","flagged":false,"secs":2.28,"cpu":5.08,"memKiB":273715},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-1","label":"C++ g++","flagged":false,"secs":2.69,"cpu":9.47,"memKiB":1896727},{"bench":"binary-trees","lang":"cpp","prog":"binarytrees-gpp-2","label":"C++ g++ #2","flagged":false,"secs":22.77,"cpu":22.93,"memKiB":274080},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-2","label":"Go #2","flagged":false,"secs":14.21,"cpu":56.5,"memKiB":635613},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-5","label":"Go #5","flagged":false,"secs":14.68,"cpu":57.91,"memKiB":386056},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-3","label":"Go #3","flagged":false,"secs":14.9,"cpu":58.07,"memKiB":329499},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-6","label":"Go #6","flagged":false,"secs":27.93,"cpu":29.49,"memKiB":416195},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-1","label":"Go","flagged":false,"secs":32.05,"cpu":59.91,"memKiB":243114},{"bench":"binary-trees","lang":"go","prog":"binarytrees-go-7","label":"Go #7","flagged":false,"secs":32.57,"cpu":61.47,"memKiB":241345},{"bench":"binary-trees","lang":"node","prog":"binarytrees-node-6","label":"Node.js #6","flagged":false,"secs":8.61,"cpu":30.98,"memKiB":1275720},{"bench":"binary-trees","lang":"node","prog":"binarytrees-node-1","label":"Node.js","flagged":false,"secs":8.94,"cpu":34.02,"memKiB":1389228},{"bench":"binary-trees","lang":"node","prog":"binarytrees-node-7","label":"Node.js #7","flagged":false,"secs":16.07,"cpu":28.42,"memKiB":1128059},{"bench":"binary-trees","lang":"python","prog":"binarytrees-python3-4","label":"Python 3 #4","flagged":false,"secs":33.37,"cpu":121.5,"memKiB":460771},{"bench":"binary-trees","lang":"python","prog":"binarytrees-python3-1","label":"Python 3","flagged":false,"secs":34.85,"cpu":123.53,"memKiB":445649},{"bench":"binary-trees","lang":"python","prog":"binarytrees-python3-5","label":"Python 3 #5","flagged":false,"secs":35.37,"cpu":125.91,"memKiB":806117},{"bench":"binary-trees","lang":"python","prog":"binarytrees-python3-3","label":"Python 3 #3","flagged":false,"secs":51.88,"cpu":149.39,"memKiB":819077},{"bench":"binary-trees","lang":"python","prog":"binarytrees-python3-2","label":"Python 3 #2","flagged":false,"secs":100.49,"cpu":100.89,"memKiB":281829},{"bench":"binary-trees","lang":"rust","prog":"binarytrees-rust-5","label":"Rust #5","flagged":false,"secs":1.07,"cpu":3.92,"memKiB":139121},{"bench":"binary-trees","lang":"rust","prog":"binarytrees-rust-2","label":"Rust #2","flagged":false,"secs":1.17,"cpu":4.21,"memKiB":140157},{"bench":"binary-trees","lang":"rust","prog":"binarytrees-rust-4","label":"Rust #4","flagged":false,"secs":1.38,"cpu":5.0,"memKiB":202686},{"bench":"binary-trees","lang":"rust","prog":"binarytrees-rust-3","label":"Rust #3","flagged":false,"secs":1.4,"cpu":5.21,"memKiB":172392},{"bench":"binary-trees","lang":"rust","prog":"binarytrees-rust-1","label":"Rust","flagged":false,"secs":2.1,"cpu":7.44,"memKiB":137417},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-6","label":"C++ g++ #6","flagged":true,"secs":3.33,"cpu":13.12,"memKiB":5800},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-5","label":"C++ g++ #5","flagged":false,"secs":7.86,"cpu":30.77,"memKiB":5792},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-4","label":"C++ g++ #4","flagged":false,"secs":8.91,"cpu":35.23,"memKiB":5710},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-2","label":"C++ g++ #2","flagged":false,"secs":9.14,"cpu":36.07,"memKiB":5698},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-1","label":"C++ g++","flagged":false,"secs":10.53,"cpu":41.4,"memKiB":5534},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-7","label":"C++ g++ #7","flagged":true,"secs":14.06,"cpu":14.07,"memKiB":2449},{"bench":"fannkuch-redux","lang":"cpp","prog":"fannkuchredux-gpp-3","label":"C++ g++ #3","flagged":false,"secs":37.89,"cpu":37.95,"memKiB":2351},{"bench":"fannkuch-redux","lang":"go","prog":"fannkuchredux-go-3","label":"Go #3","flagged":false,"secs":8.36,"cpu":33.35,"memKiB":3846},{"bench":"fannkuch-redux","lang":"go","prog":"fannkuchredux-go-1","label":"Go","flagged":false,"secs":12.27,"cpu":49.09,"memKiB":4903},{"bench":"fannkuch-redux","lang":"go","prog":"fannkuchredux-go-2","label":"Go #2","flagged":false,"secs":12.36,"cpu":49.4,"memKiB":16966},{"bench":"fannkuch-redux","lang":"go","prog":"fannkuchredux-go-8","label":"Go #8","flagged":false,"secs":46.15,"cpu":46.3,"memKiB":3207},{"bench":"fannkuch-redux","lang":"node","prog":"fannkuchredux-node-5","label":"Node.js #5","flagged":false,"secs":11.07,"cpu":44.11,"memKiB":111055},{"bench":"fannkuch-redux","lang":"node","prog":"fannkuchredux-node-8","label":"Node.js #8","flagged":false,"secs":58.32,"cpu":58.31,"memKiB":64094},{"bench":"fannkuch-redux","lang":"python","prog":"fannkuchredux-python3-4","label":"Python 3 #4","flagged":false,"secs":311.18,"cpu":1221.85,"memKiB":28701},{"bench":"fannkuch-redux","lang":"python","prog":"fannkuchredux-python3-6","label":"Python 3 #6","flagged":false,"secs":943.88,"cpu":942.63,"memKiB":11874},{"bench":"fannkuch-redux","lang":"python","prog":"fannkuchredux-python3-8","label":"Python 3 #8","flagged":false,"secs":2457.09,"cpu":2455.59,"memKiB":11874},{"bench":"fannkuch-redux","lang":"rust","prog":"fannkuchredux-rust-6","label":"Rust #6","flagged":true,"secs":3.81,"cpu":15.06,"memKiB":3985},{"bench":"fannkuch-redux","lang":"rust","prog":"fannkuchredux-rust-4","label":"Rust #4","flagged":false,"secs":6.94,"cpu":27.12,"memKiB":3985},{"bench":"fannkuch-redux","lang":"rust","prog":"fannkuchredux-rust-5","label":"Rust #5","flagged":false,"secs":7.41,"cpu":28.89,"memKiB":3990},{"bench":"fannkuch-redux","lang":"rust","prog":"fannkuchredux-rust-2","label":"Rust #2","flagged":false,"secs":9.19,"cpu":36.06,"memKiB":3723},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-9","label":"C++ g++ #9","flagged":true,"secs":0.78,"cpu":1.56,"memKiB":6214},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-7","label":"C++ g++ #7","flagged":false,"secs":0.88,"cpu":3.06,"memKiB":6304},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-5","label":"C++ g++ #5","flagged":false,"secs":1.07,"cpu":3.71,"memKiB":7012},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-6","label":"C++ g++ #6","flagged":false,"secs":1.08,"cpu":3.9,"memKiB":7127},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-2","label":"C++ g++ #2","flagged":false,"secs":1.85,"cpu":1.85,"memKiB":5108},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-1","label":"C++ g++","flagged":false,"secs":1.93,"cpu":1.93,"memKiB":5104},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-3","label":"C++ g++ #3","flagged":false,"secs":2.63,"cpu":2.63,"memKiB":5284},{"bench":"fasta","lang":"cpp","prog":"fasta-gpp-4","label":"C++ g++ #4","flagged":false,"secs":3.34,"cpu":3.34,"memKiB":2363},{"bench":"fasta","lang":"go","prog":"fasta-go-2","label":"Go #2","flagged":false,"secs":1.27,"cpu":4.08,"memKiB":12644},{"bench":"fasta","lang":"go","prog":"fasta-go-3","label":"Go #3","flagged":false,"secs":1.52,"cpu":4.1,"memKiB":5095},{"bench":"fasta","lang":"go","prog":"fasta-go-1","label":"Go","flagged":false,"secs":3.74,"cpu":3.76,"memKiB":3207},{"bench":"fasta","lang":"go","prog":"fasta-go-8","label":"Go #8","flagged":false,"secs":11.22,"cpu":11.67,"memKiB":9052},{"bench":"fasta","lang":"node","prog":"fasta-node-5","label":"Node.js #5","flagged":true,"secs":2.56,"cpu":7.12,"memKiB":120930},{"bench":"fasta","lang":"node","prog":"fasta-node-8","label":"Node.js #8","flagged":false,"secs":18.98,"cpu":19.4,"memKiB":74129},{"bench":"fasta","lang":"node","prog":"fasta-node-1","label":"Node.js","flagged":false,"secs":38.55,"cpu":39.52,"memKiB":71639},{"bench":"fasta","lang":"python","prog":"fasta-python3-5","label":"Python 3 #5","flagged":false,"secs":27.95,"cpu":54.58,"memKiB":1190347},{"bench":"fasta","lang":"python","prog":"fasta-python3-3","label":"Python 3 #3","flagged":false,"secs":39.03,"cpu":43.05,"memKiB":12218},{"bench":"fasta","lang":"python","prog":"fasta-python3-2","label":"Python 3 #2","flagged":false,"secs":39.06,"cpu":42.72,"memKiB":12415},{"bench":"fasta","lang":"python","prog":"fasta-python3-1","label":"Python 3","flagged":false,"secs":57.39,"cpu":61.35,"memKiB":12100},{"bench":"fasta","lang":"python","prog":"fasta-python3-8","label":"Python 3 #8","flagged":false,"secs":153.17,"cpu":156.11,"memKiB":11915},{"bench":"fasta","lang":"rust","prog":"fasta-rust-7","label":"Rust #7","flagged":true,"secs":0.78,"cpu":1.55,"memKiB":4772},{"bench":"fasta","lang":"rust","prog":"fasta-rust-9","label":"Rust #9","flagged":false,"secs":0.94,"cpu":3.27,"memKiB":5534},{"bench":"fasta","lang":"rust","prog":"fasta-rust-5","label":"Rust #5","flagged":false,"secs":0.94,"cpu":3.5,"memKiB":5554},{"bench":"fasta","lang":"rust","prog":"fasta-rust-2","label":"Rust #2","flagged":false,"secs":0.95,"cpu":3.48,"memKiB":5554},{"bench":"fasta","lang":"rust","prog":"fasta-rust-3","label":"Rust #3","flagged":false,"secs":2.03,"cpu":2.03,"memKiB":3199},{"bench":"fasta","lang":"rust","prog":"fasta-rust-4","label":"Rust #4","flagged":false,"secs":3.52,"cpu":3.53,"memKiB":128217},{"bench":"fasta","lang":"rust","prog":"fasta-rust-6","label":"Rust #6","flagged":false,"secs":3.53,"cpu":3.53,"memKiB":128381},{"bench":"fasta","lang":"rust","prog":"fasta-rust-1","label":"Rust","flagged":false,"secs":4.45,"cpu":4.58,"memKiB":3113},{"bench":"k-nucleotide","lang":"cpp","prog":"knucleotide-gpp-2","label":"C++ g++ #2","flagged":false,"secs":2.02,"cpu":6.29,"memKiB":162349},{"bench":"k-nucleotide","lang":"cpp","prog":"knucleotide-gpp-3","label":"C++ g++ #3","flagged":false,"secs":4.19,"cpu":14.13,"memKiB":171622},{"bench":"k-nucleotide","lang":"cpp","prog":"knucleotide-gpp-1","label":"C++ g++","flagged":false,"secs":7.04,"cpu":15.43,"memKiB":778510},{"bench":"k-nucleotide","lang":"go","prog":"knucleotide-go-7","label":"Go #7","flagged":false,"secs":7.58,"cpu":28.95,"memKiB":168186},{"bench":"k-nucleotide","lang":"go","prog":"knucleotide-go-3","label":"Go #3","flagged":false,"secs":8.2,"cpu":30.34,"memKiB":150413},{"bench":"k-nucleotide","lang":"go","prog":"knucleotide-go-6","label":"Go #6","flagged":false,"secs":8.3,"cpu":30.48,"memKiB":150442},{"bench":"k-nucleotide","lang":"go","prog":"knucleotide-go-4","label":"Go #4","flagged":false,"secs":9.27,"cpu":33.61,"memKiB":144650},{"bench":"k-nucleotide","lang":"go","prog":"knucleotide-go-8","label":"Go #8","flagged":false,"secs":61.38,"cpu":62.6,"memKiB":558379},{"bench":"k-nucleotide","lang":"node","prog":"knucleotide-node-3","label":"Node.js #3","flagged":false,"secs":15.99,"cpu":44.22,"memKiB":448524},{"bench":"k-nucleotide","lang":"node","prog":"knucleotide-node-2","label":"Node.js #2","flagged":false,"secs":35.57,"cpu":112.23,"memKiB":1897566},{"bench":"k-nucleotide","lang":"node","prog":"knucleotide-node-1","label":"Node.js","flagged":false,"secs":37.72,"cpu":116.12,"memKiB":1361019},{"bench":"k-nucleotide","lang":"node","prog":"knucleotide-node-8","label":"Node.js #8","flagged":false,"secs":105.52,"cpu":111.66,"memKiB":734392},{"bench":"k-nucleotide","lang":"python","prog":"knucleotide-python3-3","label":"Python 3 #3","flagged":false,"secs":46.55,"cpu":184.84,"memKiB":674185},{"bench":"k-nucleotide","lang":"python","prog":"knucleotide-python3-9","label":"Python 3 #9","flagged":false,"secs":66.67,"cpu":237.44,"memKiB":392184},{"bench":"k-nucleotide","lang":"python","prog":"knucleotide-python3-4","label":"Python 3 #4","flagged":false,"secs":76.67,"cpu":236.16,"memKiB":523751},{"bench":"k-nucleotide","lang":"python","prog":"knucleotide-python3-8","label":"Python 3 #8","flagged":false,"secs":234.08,"cpu":236.12,"memKiB":642265},{"bench":"k-nucleotide","lang":"python","prog":"knucleotide-python3-1","label":"Python 3","flagged":false,"secs":234.2,"cpu":236.13,"memKiB":515047},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-7","label":"Rust #7","flagged":false,"secs":2.57,"cpu":8.26,"memKiB":139088},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-6","label":"Rust #6","flagged":false,"secs":2.79,"cpu":10.11,"memKiB":165048},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-3","label":"Rust #3","flagged":false,"secs":3.28,"cpu":9.93,"memKiB":142631},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-5","label":"Rust #5","flagged":false,"secs":3.88,"cpu":11.79,"memKiB":143155},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-2","label":"Rust #2","flagged":false,"secs":6.0,"cpu":15.97,"memKiB":142946},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-9","label":"Rust #9","flagged":false,"secs":6.33,"cpu":18.27,"memKiB":141099},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-4","label":"Rust #4","flagged":false,"secs":6.69,"cpu":18.37,"memKiB":142090},{"bench":"k-nucleotide","lang":"rust","prog":"knucleotide-rust-1","label":"Rust","flagged":false,"secs":21.08,"cpu":64.77,"memKiB":161219},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-4","label":"C++ g++ #4","flagged":true,"secs":0.89,"cpu":3.46,"memKiB":37941},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-1","label":"C++ g++","flagged":true,"secs":0.9,"cpu":3.48,"memKiB":37626},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-6","label":"C++ g++ #6","flagged":true,"secs":0.98,"cpu":3.87,"memKiB":37908},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-0","label":"C++ g++ #0","flagged":false,"secs":2.36,"cpu":9.31,"memKiB":38281},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-9","label":"C++ g++ #9","flagged":false,"secs":3.53,"cpu":13.59,"memKiB":37863},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-7","label":"C++ g++ #7","flagged":false,"secs":4.87,"cpu":13.3,"memKiB":38048},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-5","label":"C++ g++ #5","flagged":false,"secs":13.47,"cpu":13.49,"memKiB":36884},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-2","label":"C++ g++ #2","flagged":false,"secs":16.96,"cpu":16.96,"memKiB":36704},{"bench":"mandelbrot","lang":"cpp","prog":"mandelbrot-gpp-3","label":"C++ g++ #3","flagged":false,"secs":27.38,"cpu":27.38,"memKiB":5181},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-4","label":"Go #4","flagged":false,"secs":3.77,"cpu":15.02,"memKiB":37970},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-3","label":"Go #3","flagged":false,"secs":3.78,"cpu":15.03,"memKiB":38101},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-1","label":"Go","flagged":false,"secs":5.04,"cpu":20.05,"memKiB":35787},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-2","label":"Go #2","flagged":false,"secs":6.87,"cpu":27.32,"memKiB":35549},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-6","label":"Go #6","flagged":false,"secs":6.91,"cpu":27.48,"memKiB":35119},{"bench":"mandelbrot","lang":"go","prog":"mandelbrot-go-8","label":"Go #8","flagged":false,"secs":26.7,"cpu":26.77,"memKiB":3199},{"bench":"mandelbrot","lang":"node","prog":"mandelbrot-node-3","label":"Node.js #3","flagged":false,"secs":4.05,"cpu":15.89,"memKiB":144757},{"bench":"mandelbrot","lang":"node","prog":"mandelbrot-node-2","label":"Node.js #2","flagged":false,"secs":29.41,"cpu":29.44,"memKiB":73617},{"bench":"mandelbrot","lang":"node","prog":"mandelbrot-node-1","label":"Node.js","flagged":false,"secs":69.02,"cpu":74.16,"memKiB":69100},{"bench":"mandelbrot","lang":"node","prog":"mandelbrot-node-8","label":"Node.js #8","flagged":false,"secs":70.31,"cpu":74.53,"memKiB":68338},{"bench":"mandelbrot","lang":"python","prog":"mandelbrot-python3-7","label":"Python 3 #7","flagged":false,"secs":182.94,"cpu":723.28,"memKiB":62173},{"bench":"mandelbrot","lang":"python","prog":"mandelbrot-python3-2","label":"Python 3 #2","flagged":false,"secs":237.64,"cpu":937.87,"memKiB":230973},{"bench":"mandelbrot","lang":"python","prog":"mandelbrot-python3-5","label":"Python 3 #5","flagged":false,"secs":260.63,"cpu":1033.16,"memKiB":61620},{"bench":"mandelbrot","lang":"python","prog":"mandelbrot-python3-3","label":"Python 3 #3","flagged":false,"secs":879.41,"cpu":877.96,"memKiB":45085},{"bench":"mandelbrot","lang":"python","prog":"mandelbrot-python3-8","label":"Python 3 #8","flagged":false,"secs":1577.29,"cpu":1575.8,"memKiB":45031},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-4","label":"Rust #4","flagged":false,"secs":0.95,"cpu":3.78,"memKiB":35598},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-6","label":"Rust #6","flagged":false,"secs":1.08,"cpu":4.21,"memKiB":36426},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-7","label":"Rust #7","flagged":false,"secs":1.1,"cpu":4.34,"memKiB":35906},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-2","label":"Rust #2","flagged":false,"secs":1.1,"cpu":4.44,"memKiB":35754},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-5","label":"Rust #5","flagged":false,"secs":1.12,"cpu":4.38,"memKiB":36311},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-3","label":"Rust #3","flagged":false,"secs":1.15,"cpu":4.57,"memKiB":14615},{"bench":"mandelbrot","lang":"rust","prog":"mandelbrot-rust-1","label":"Rust","flagged":false,"secs":2.01,"cpu":7.9,"memKiB":42631},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-0","label":"C++ g++ #0","flagged":true,"secs":2.15,"cpu":2.16,"memKiB":2417},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-7","label":"C++ g++ #7","flagged":true,"secs":4.09,"cpu":4.14,"memKiB":5124},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-9","label":"C++ g++ #9","flagged":false,"secs":5.15,"cpu":5.17,"memKiB":2486},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-3","label":"C++ g++ #3","flagged":false,"secs":5.33,"cpu":5.34,"memKiB":2482},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-4","label":"C++ g++ #4","flagged":true,"secs":5.46,"cpu":5.46,"memKiB":2482},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-2","label":"C++ g++ #2","flagged":false,"secs":6.02,"cpu":6.06,"memKiB":2490},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-5","label":"C++ g++ #5","flagged":false,"secs":6.33,"cpu":6.35,"memKiB":2478},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-1","label":"C++ g++","flagged":false,"secs":6.62,"cpu":6.64,"memKiB":2499},{"bench":"n-body","lang":"cpp","prog":"nbody-gpp-6","label":"C++ g++ #6","flagged":false,"secs":6.94,"cpu":6.96,"memKiB":2499},{"bench":"n-body","lang":"go","prog":"nbody-go-3","label":"Go #3","flagged":false,"secs":6.39,"cpu":6.41,"memKiB":3191},{"bench":"n-body","lang":"go","prog":"nbody-go-1","label":"Go","flagged":false,"secs":7.02,"cpu":7.18,"memKiB":3228},{"bench":"n-body","lang":"go","prog":"nbody-go-2","label":"Go #2","flagged":false,"secs":7.04,"cpu":7.06,"memKiB":3203},{"bench":"n-body","lang":"go","prog":"nbody-go-8","label":"Go #8","flagged":false,"secs":9.6,"cpu":9.64,"memKiB":3191},{"bench":"n-body","lang":"node","prog":"nbody-node-6","label":"Node.js #6","flagged":false,"secs":8.55,"cpu":8.66,"memKiB":67244},{"bench":"n-body","lang":"node","prog":"nbody-node-8","label":"Node.js #8","flagged":false,"secs":9.63,"cpu":9.82,"memKiB":66695},{"bench":"n-body","lang":"python","prog":"nbody-python3-1","label":"Python 3","flagged":false,"secs":372.41,"cpu":371.23,"memKiB":12198},{"bench":"n-body","lang":"python","prog":"nbody-python3-2","label":"Python 3 #2","flagged":false,"secs":442.06,"cpu":440.87,"memKiB":12554},{"bench":"n-body","lang":"python","prog":"nbody-python3-8","label":"Python 3 #8","flagged":false,"secs":529.38,"cpu":528.16,"memKiB":12497},{"bench":"n-body","lang":"rust","prog":"nbody-rust-9","label":"Rust #9","flagged":true,"secs":2.19,"cpu":2.5,"memKiB":3023},{"bench":"n-body","lang":"rust","prog":"nbody-rust-7","label":"Rust #7","flagged":true,"secs":3.24,"cpu":3.24,"memKiB":2937},{"bench":"n-body","lang":"rust","prog":"nbody-rust-3","label":"Rust #3","flagged":false,"secs":3.46,"cpu":3.46,"memKiB":2937},{"bench":"n-body","lang":"rust","prog":"nbody-rust-2","label":"Rust #2","flagged":false,"secs":3.65,"cpu":3.65,"memKiB":3031},{"bench":"n-body","lang":"rust","prog":"nbody-rust-6","label":"Rust #6","flagged":false,"secs":4.37,"cpu":4.43,"memKiB":3031},{"bench":"n-body","lang":"rust","prog":"nbody-rust-5","label":"Rust #5","flagged":true,"secs":5.02,"cpu":5.03,"memKiB":3035},{"bench":"n-body","lang":"rust","prog":"nbody-rust-4","label":"Rust #4","flagged":false,"secs":5.13,"cpu":5.26,"memKiB":3039},{"bench":"n-body","lang":"rust","prog":"nbody-rust-1","label":"Rust","flagged":false,"secs":5.52,"cpu":5.55,"memKiB":3027},{"bench":"pidigits","lang":"cpp","prog":"pidigits-gpp-4","label":"C++ g++ #4","flagged":false,"secs":0.72,"cpu":0.72,"memKiB":6496},{"bench":"pidigits","lang":"cpp","prog":"pidigits-gpp-5","label":"C++ g++ #5","flagged":true,"secs":0.73,"cpu":0.73,"memKiB":6300},{"bench":"pidigits","lang":"go","prog":"pidigits-go-4","label":"Go #4","flagged":true,"secs":0.82,"cpu":0.84,"memKiB":6402},{"bench":"pidigits","lang":"go","prog":"pidigits-go-1","label":"Go","flagged":false,"secs":1.15,"cpu":1.27,"memKiB":7533},{"bench":"pidigits","lang":"go","prog":"pidigits-go-3","label":"Go #3","flagged":true,"secs":1.17,"cpu":1.42,"memKiB":6885},{"bench":"pidigits","lang":"go","prog":"pidigits-go-2","label":"Go #2","flagged":false,"secs":1.76,"cpu":1.96,"memKiB":7823},{"bench":"pidigits","lang":"go","prog":"pidigits-go-6","label":"Go #6","flagged":false,"secs":2.47,"cpu":2.48,"memKiB":10703},{"bench":"pidigits","lang":"go","prog":"pidigits-go-7","label":"Go #7","flagged":false,"secs":5.0,"cpu":5.65,"memKiB":10527},{"bench":"pidigits","lang":"node","prog":"pidigits-node-4","label":"Node.js #4","flagged":false,"secs":1.15,"cpu":1.16,"memKiB":71688},{"bench":"pidigits","lang":"node","prog":"pidigits-node-2","label":"Node.js #2","flagged":false,"secs":12.17,"cpu":12.29,"memKiB":102679},{"bench":"pidigits","lang":"node","prog":"pidigits-node-3","label":"Node.js #3","flagged":false,"secs":12.25,"cpu":12.3,"memKiB":102257},{"bench":"pidigits","lang":"python","prog":"pidigits-python3-3","label":"Python 3 #3","flagged":true,"secs":1.35,"cpu":1.3,"memKiB":20009},{"bench":"pidigits","lang":"python","prog":"pidigits-python3-5","label":"Python 3 #5","flagged":false,"secs":1.4,"cpu":1.36,"memKiB":15606},{"bench":"pidigits","lang":"python","prog":"pidigits-python3-4","label":"Python 3 #4","flagged":false,"secs":4.63,"cpu":4.6,"memKiB":12718},{"bench":"pidigits","lang":"rust","prog":"pidigits-rust-4","label":"Rust #4","flagged":false,"secs":0.71,"cpu":0.72,"memKiB":4055},{"bench":"pidigits","lang":"rust","prog":"pidigits-rust-2","label":"Rust #2","flagged":true,"secs":0.75,"cpu":0.75,"memKiB":4387},{"bench":"pidigits","lang":"rust","prog":"pidigits-rust-1","label":"Rust","flagged":true,"secs":0.75,"cpu":0.75,"memKiB":4243},{"bench":"pidigits","lang":"rust","prog":"pidigits-rust-3","label":"Rust #3","flagged":true,"secs":0.75,"cpu":0.75,"memKiB":4510},{"bench":"regex-redux","lang":"cpp","prog":"regexredux-gpp-6","label":"C++ g++ #6","flagged":false,"secs":1.14,"cpu":2.25,"memKiB":285639},{"bench":"regex-redux","lang":"cpp","prog":"regexredux-gpp-3","label":"C++ g++ #3","flagged":false,"secs":12.37,"cpu":18.36,"memKiB":222614},{"bench":"regex-redux","lang":"go","prog":"regexredux-go-5","label":"Go #5","flagged":false,"secs":3.23,"cpu":5.42,"memKiB":297800},{"bench":"regex-redux","lang":"go","prog":"regexredux-go-4","label":"Go #4","flagged":false,"secs":14.49,"cpu":35.45,"memKiB":349008},{"bench":"regex-redux","lang":"go","prog":"regexredux-go-3","label":"Go #3","flagged":false,"secs":25.15,"cpu":62.59,"memKiB":336585},{"bench":"regex-redux","lang":"go","prog":"regexredux-go-1","label":"Go","flagged":false,"secs":25.79,"cpu":62.45,"memKiB":301662},{"bench":"regex-redux","lang":"node","prog":"regexredux-node-3","label":"Node.js #3","flagged":false,"secs":4.35,"cpu":5.81,"memKiB":840503},{"bench":"regex-redux","lang":"node","prog":"regexredux-node-4","label":"Node.js #4","flagged":false,"secs":5.47,"cpu":5.7,"memKiB":1036935},{"bench":"regex-redux","lang":"python","prog":"regexredux-python3-2","label":"Python 3 #2","flagged":true,"secs":1.41,"cpu":2.65,"memKiB":191300},{"bench":"regex-redux","lang":"python","prog":"regexredux-python3-1","label":"Python 3","flagged":false,"secs":8.96,"cpu":16.61,"memKiB":459624},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-7","label":"Rust #7","flagged":true,"secs":0.78,"cpu":2.0,"memKiB":157442},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-6","label":"Rust #6","flagged":false,"secs":1.21,"cpu":1.46,"memKiB":159846},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-5","label":"Rust #5","flagged":false,"secs":1.35,"cpu":1.58,"memKiB":209863},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-1","label":"Rust","flagged":false,"secs":1.35,"cpu":1.61,"memKiB":159793},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-3","label":"Rust #3","flagged":false,"secs":1.38,"cpu":1.63,"memKiB":210379},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-4","label":"Rust #4","flagged":false,"secs":1.38,"cpu":1.64,"memKiB":206811},{"bench":"regex-redux","lang":"rust","prog":"regexredux-rust-2","label":"Rust #2","flagged":false,"secs":1.38,"cpu":1.64,"memKiB":159937},{"bench":"reverse-complement","lang":"cpp","prog":"revcomp-gpp-2","label":"C++ g++ #2","flagged":true,"secs":0.76,"cpu":0.76,"memKiB":514101},{"bench":"reverse-complement","lang":"cpp","prog":"revcomp-gpp-1","label":"C++ g++","flagged":false,"secs":6.55,"cpu":6.62,"memKiB":1006805},{"bench":"reverse-complement","lang":"cpp","prog":"revcomp-gpp-5","label":"C++ g++ #5","flagged":false,"secs":37.66,"cpu":37.67,"memKiB":792846},{"bench":"reverse-complement","lang":"go","prog":"revcomp-go-6","label":"Go #6","flagged":false,"secs":1.93,"cpu":3.49,"memKiB":1277608},{"bench":"reverse-complement","lang":"go","prog":"revcomp-go-2","label":"Go #2","flagged":false,"secs":2.22,"cpu":2.37,"memKiB":822211},{"bench":"reverse-complement","lang":"go","prog":"revcomp-go-3","label":"Go #3","flagged":false,"secs":2.5,"cpu":2.64,"memKiB":821985},{"bench":"reverse-complement","lang":"node","prog":"revcomp-node-2","label":"Node.js #2","flagged":true,"secs":15.53,"cpu":16.32,"memKiB":763048},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-5","label":"Python 3 #5","flagged":false,"secs":4.18,"cpu":7.48,"memKiB":2418156},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-3","label":"Python 3 #3","flagged":false,"secs":4.96,"cpu":4.95,"memKiB":523801},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-6","label":"Python 3 #6","flagged":false,"secs":7.59,"cpu":11.09,"memKiB":2795930},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-2","label":"Python 3 #2","flagged":false,"secs":10.09,"cpu":10.19,"memKiB":1837285},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-1","label":"Python 3","flagged":false,"secs":10.43,"cpu":10.51,"memKiB":2040713},{"bench":"reverse-complement","lang":"python","prog":"revcomp-python3-4","label":"Python 3 #4","flagged":false,"secs":13.47,"cpu":13.66,"memKiB":4109324},{"bench":"reverse-complement","lang":"rust","prog":"revcomp-rust-1","label":"Rust","flagged":true,"secs":0.55,"cpu":0.85,"memKiB":512963},{"bench":"reverse-complement","lang":"rust","prog":"revcomp-rust-2","label":"Rust #2","flagged":false,"secs":1.01,"cpu":1.61,"memKiB":1022128},{"bench":"reverse-complement","lang":"rust","prog":"revcomp-rust-3","label":"Rust #3","flagged":false,"secs":1.02,"cpu":1.72,"memKiB":1022034},{"bench":"spectral-norm","lang":"cpp","prog":"spectralnorm-gpp-6","label":"C++ g++ #6","flagged":true,"secs":0.72,"cpu":2.86,"memKiB":3981},{"bench":"spectral-norm","lang":"cpp","prog":"spectralnorm-gpp-5","label":"C++ g++ #5","flagged":true,"secs":1.33,"cpu":5.28,"memKiB":5820},{"bench":"spectral-norm","lang":"cpp","prog":"spectralnorm-gpp-7","label":"C++ g++ #7","flagged":false,"secs":1.53,"cpu":6.07,"memKiB":4071},{"bench":"spectral-norm","lang":"cpp","prog":"spectralnorm-gpp-1","label":"C++ g++","flagged":false,"secs":5.34,"cpu":5.34,"memKiB":5292},{"bench":"spectral-norm","lang":"go","prog":"spectralnorm-go-4","label":"Go #4","flagged":false,"secs":1.43,"cpu":5.69,"memKiB":4174},{"bench":"spectral-norm","lang":"go","prog":"spectralnorm-go-2","label":"Go #2","flagged":false,"secs":1.51,"cpu":5.7,"memKiB":4317},{"bench":"spectral-norm","lang":"go","prog":"spectralnorm-go-8","label":"Go #8","flagged":false,"secs":5.34,"cpu":5.36,"memKiB":3838},{"bench":"spectral-norm","lang":"go","prog":"spectralnorm-go-1","label":"Go","flagged":false,"secs":5.34,"cpu":5.36,"memKiB":4059},{"bench":"spectral-norm","lang":"node","prog":"spectralnorm-node-6","label":"Node.js #6","flagged":false,"secs":1.6,"cpu":6.03,"memKiB":116212},{"bench":"spectral-norm","lang":"node","prog":"spectralnorm-node-7","label":"Node.js #7","flagged":false,"secs":5.4,"cpu":5.4,"memKiB":66163},{"bench":"spectral-norm","lang":"node","prog":"spectralnorm-node-1","label":"Node.js","flagged":false,"secs":5.41,"cpu":5.45,"memKiB":67637},{"bench":"spectral-norm","lang":"node","prog":"spectralnorm-node-8","label":"Node.js #8","flagged":false,"secs":6.53,"cpu":6.53,"memKiB":66642},{"bench":"spectral-norm","lang":"python","prog":"spectralnorm-python3-4","label":"Python 3 #4","flagged":false,"secs":90.37,"cpu":352.91,"memKiB":34693},{"bench":"spectral-norm","lang":"python","prog":"spectralnorm-python3-7","label":"Python 3 #7","flagged":false,"secs":109.91,"cpu":421.84,"memKiB":34578},{"bench":"spectral-norm","lang":"python","prog":"spectralnorm-python3-6","label":"Python 3 #6","flagged":false,"secs":349.68,"cpu":348.48,"memKiB":13660},{"bench":"spectral-norm","lang":"python","prog":"spectralnorm-python3-8","label":"Python 3 #8","flagged":false,"secs":386.45,"cpu":385.07,"memKiB":12833},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-6","label":"Rust #6","flagged":true,"secs":0.72,"cpu":2.85,"memKiB":3981},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-4","label":"Rust #4","flagged":false,"secs":0.72,"cpu":2.85,"memKiB":4047},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-5","label":"Rust #5","flagged":false,"secs":0.72,"cpu":2.86,"memKiB":4018},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-2","label":"Rust #2","flagged":true,"secs":0.72,"cpu":2.86,"memKiB":4145},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-1","label":"Rust","flagged":true,"secs":0.72,"cpu":2.86,"memKiB":4104},{"bench":"spectral-norm","lang":"rust","prog":"spectralnorm-rust-3","label":"Rust #3","flagged":true,"secs":0.74,"cpu":2.94,"memKiB":4121}];
+
+// ---------- 言語とベンチマークの定義 ----------
+const LANGS = [
+  { id: "cpp",    name: "C++",        impl: "g++ 14.2.0",      css: "--c-cpp",    shape: "circle" },
+  { id: "rust",   name: "Rust",       impl: "rustc 1.84.1",    css: "--c-rust",   shape: "square" },
+  { id: "go",     name: "Go",         impl: "Go 1.23.1",       css: "--c-go",     shape: "diamond" },
+  { id: "node",   name: "JavaScript", impl: "Node.js 23.8.0",  css: "--c-node",   shape: "tri" },
+  { id: "python", name: "Python",     impl: "CPython 3.13.0",  css: "--c-python", shape: "tridown" },
+];
+const BENCH = [
+  { id: "n-body", group: "計算", viz: "orbit",
+    desc: "太陽・木星・土星・天王星・海王星の5天体の軌道を5,000万ステップ計算します。浮動小数点の掛け算と平方根を繰り返す問題です。" },
+  { id: "spectral-norm", group: "計算", viz: "matrix",
+    desc: "式で決まる5,500×5,500の行列について、行列とベクトルの掛け算を繰り返してスペクトルノルムを求めます。" },
+  { id: "mandelbrot", group: "計算", viz: "fractal",
+    desc: "16,000×16,000画素のマンデルブロ集合を計算し、白黒画像として出力します。画素ごとに複素数の計算を最大50回繰り返します。" },
+  { id: "fannkuch-redux", group: "計算", viz: "pancake",
+    desc: "12枚のパンケーキの並び方（12! ≒ 4.8億通り）をすべて調べ、先頭から裏返す操作の回数を数えます。配列の要素の入れ替えが中心の問題です。" },
+  { id: "binary-trees", group: "メモリ", viz: "tree",
+    desc: "深さ21までの二分木を数百万個作っては捨てます。メモリの確保と解放（GC を含む）の速さを測る問題です。" },
+  { id: "fasta", group: "文字列・入出力", viz: "stream",
+    desc: "乱数と決まった表から、DNA の塩基配列（A・C・G・T）を2億5,000万文字生成して出力します。" },
+  { id: "k-nucleotide", group: "文字列・入出力", viz: "count",
+    desc: "1億2,500万文字の塩基配列を読み、長さ1・2の全パターンと、指定された5つの長いパターンの出現回数をハッシュ表で数えます。" },
+  { id: "reverse-complement", group: "文字列・入出力", viz: "revcomp",
+    desc: "約10億文字の塩基配列を読み、配列を逆順にしてから相補塩基（A↔T、C↔G）に置き換えて出力します。読み書きの量が多い問題です。" },
+  { id: "regex-redux", group: "ライブラリ", viz: "regex",
+    desc: "5,000万文字の塩基配列に、9種類の正規表現で一致数を数え、5種類の置換を行います。各言語とも C で書かれた正規表現エンジンを使えます。" },
+  { id: "pidigits", group: "ライブラリ", viz: "digits",
+    desc: "円周率を1万桁計算します。最速のプログラムはどの言語も多倍長整数ライブラリ GMP（C で書かれている）を使うので、言語の差は小さくなります。" },
+];
+const SRC = "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/";
+const PI = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679";
+
+function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// 条件に合うプログラムのうち、指標が最小のものを返す（なければ null）
+function pick(bench, lang, metric, plain) {
+  let best = null;
+  for (const r of ROWS) {
+    if (r.bench !== bench || r.lang !== lang) continue;
+    if (plain && r.flagged) continue;
+    if (!best || r[metric] < best[metric]) best = r;
+  }
+  return best;
+}
+
+function fmtSec(s) {
+  if (s < 10) return s.toFixed(2) + " 秒";
+  if (s < 100) return s.toFixed(1) + " 秒";
+  return Math.round(s).toLocaleString("ja-JP") + " 秒";
+}
+function fmtX(x) { return x < 10 ? x.toFixed(1) : Math.round(x).toLocaleString("ja-JP"); }
+function fmtClock(s) {
+  const m = Math.floor(s / 60), r = s - m * 60;
+  return m + ":" + (r < 10 ? "0" : "") + r.toFixed(1);
+}
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// ---------- レーンの絵 ----------
+// s.ph: 今回の実行の進み具合 0〜1, s.vt: 見た目用の時間（実行回数単位）, s.col: 言語の色
+const VIZ = {
+  orbit(c, w, h, s) {
+    const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 5;
+    const radii = [0.34, 0.55, 0.77, 1].map(k => k * R);
+    const period = [1, 2.48, 7.08, 13.9];          // 木星を1とした公転周期の比
+    c.fillStyle = s.ink2; c.beginPath(); c.arc(cx, cy, 4, 0, 7); c.fill();
+    radii.forEach((r, i) => {
+      c.strokeStyle = s.grid; c.lineWidth = 1; c.beginPath(); c.arc(cx, cy, r, 0, 7); c.stroke();
+      const a = -Math.PI / 2 + 2 * Math.PI * s.vt / period[i];
+      // 軌跡（直近の動き）
+      c.strokeStyle = hexA(s.col, 0.45); c.lineWidth = 2; c.beginPath();
+      c.arc(cx, cy, r, a - 0.6, a); c.stroke();
+      c.fillStyle = s.col; c.beginPath(); c.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), 3.2, 0, 7); c.fill();
+    });
+  },
+  matrix(c, w, h, s) {
+    const cols = 22, rows = 12, cw = w / cols, ch = h / rows;
+    const it = s.ph * 10, k = Math.floor(it), f = it - k;   // 1回の実行で10回反復する
+    const n = Math.floor(f * cols * rows);
+    for (let i = 0; i < cols * rows; i++) {
+      const x = i % cols, y = Math.floor(i / cols);
+      const lvl = Math.min(1, (k + (i < n ? 1 : 0)) / 10);
+      c.fillStyle = lvl > 0 ? hexA(s.col, 0.15 + 0.85 * lvl * (0.6 + 0.4 * Math.abs(Math.sin(x * 0.7 + y)))) : s.track;
+      c.fillRect(x * cw + 0.5, y * ch + 0.5, cw - 1, ch - 1);
+    }
+  },
+  fractal(c, w, h, s) {
+    const img = fractalImage(c, w, h, s.col);
+    const rowsDone = Math.floor(s.ph * img.height);
+    c.putImageData(img, 0, 0, 0, 0, img.width, rowsDone);
+    if (s.ph < 1) { c.fillStyle = s.col; c.fillRect(0, rowsDone / s.dpr, w, 1.5); }
+  },
+  pancake(c, w, h, s) {
+    const n = 9, step = Math.floor(s.vt * 400), perm = nthPerm(n, step);
+    const bw = (w - 12) / n;
+    for (let i = 0; i < n; i++) {
+      const bh = 8 + (h - 18) * (perm[i] + 1) / n;
+      c.fillStyle = i === step % n ? s.col : hexA(s.col, 0.45);
+      c.fillRect(6 + i * bw + 1, h - 5 - bh, bw - 2, bh);
+    }
+  },
+  tree(c, w, h, s) {
+    const depth = 6, total = 2 ** depth - 1;
+    const ph = (s.ph * 2) % 1, shown = s.ph >= 1 ? total : Math.floor(ph * total) + 1;   // 1回の実行で2本の木を作る
+    const pos = i => { const d = Math.floor(Math.log2(i + 1)), k = i + 1 - 2 ** d;
+      return [w * (k + 0.5) / 2 ** d, 8 + d * (h - 16) / (depth - 1)]; };
+    c.strokeStyle = s.grid; c.lineWidth = 1;
+    for (let i = 1; i < shown; i++) { const [x, y] = pos(i), [px, py] = pos(Math.floor((i - 1) / 2));
+      c.beginPath(); c.moveTo(px, py); c.lineTo(x, y); c.stroke(); }
+    c.fillStyle = s.col;
+    for (let i = 0; i < shown; i++) { const [x, y] = pos(i); c.beginPath(); c.arc(x, y, i < 15 ? 2.6 : 1.8, 0, 7); c.fill(); }
+  },
+  stream(c, w, h, s, opt = {}) {
+    const off = Math.floor(s.vt * 240), cols = 14, rows = opt.rows || 5;
+    c.font = "600 10px ui-monospace, Menlo, monospace"; c.textBaseline = "middle";
+    const cw = (w - 8) / cols, ch = h / rows;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const k = off + y * cols + x, b = "ACGT"[hash(k) & 3];
+      let hit = opt.regex && (hash(Math.floor(k / 4)) % 9 === 0);
+      if (opt.comp && y % 2 === 1) { const t = "ACGT"[hash(off + (y - 1) * cols + (cols - 1 - x)) & 3]; c.fillStyle = s.col;
+        c.fillText({ A: "T", C: "G", G: "C", T: "A" }[t], 4 + x * cw, ch * (y + 0.5)); continue; }
+      if (hit) { c.fillStyle = hexA(s.col, 0.35); c.fillRect(2 + x * cw, ch * y + 1, cw, ch - 2); }
+      c.fillStyle = opt.comp ? s.ink2 : (y === rows - 1 ? s.col : s.ink2);
+      c.fillText(b, 4 + x * cw, ch * (y + 0.5));
+    }
+  },
+  revcomp(c, w, h, s) { VIZ.stream(c, w, h, s, { comp: true, rows: 6 }); },
+  regex(c, w, h, s) { VIZ.stream(c, w, h, s, { regex: true }); },
+  count(c, w, h, s) {
+    const freq = [30.3, 19.8, 19.8, 30.2], bw = (w - 20) / 4;
+    c.font = "600 11px ui-monospace, Menlo, monospace"; c.textAlign = "center";
+    for (let i = 0; i < 4; i++) {
+      const bh = (h - 22) * Math.min(1, s.ph * freq[i] / 30.3);
+      c.fillStyle = s.col; c.fillRect(10 + i * bw + 4, h - 16 - bh, bw - 8, bh);
+      c.fillStyle = s.ink2; c.fillText("ACGT"[i], 10 + i * bw + bw / 2, h - 6);
+    }
+    c.textAlign = "start";
+  },
+  digits(c, w, h, s) {
+    const n = Math.floor(s.ph * 60), per = 15;
+    c.font = "600 11px ui-monospace, Menlo, monospace"; c.textBaseline = "middle";
+    for (let i = 0; i < n; i++) {
+      const ch = i === 0 ? "3." : PI[i];
+      c.fillStyle = i === n - 1 && s.ph < 1 ? s.col : s.ink2;
+      c.fillText(ch, 6 + (i % per) * ((w - 10) / per), 12 + Math.floor(i / per) * 19);
+    }
+  },
+};
+
+function hash(k) { k = Math.imul(k ^ (k >>> 15), 0x2c1b3c6d); k = Math.imul(k ^ (k >>> 12), 0x297a2d39); return (k ^ (k >>> 15)) >>> 0; }
+function nthPerm(n, k) {
+  const a = [...Array(n).keys()], out = [];
+  let f = 1; for (let i = 2; i <= n; i++) f *= i;
+  k = k % f;
+  for (let i = n; i > 0; i--) { f /= i; const j = Math.floor(k / f); k %= f; out.push(a.splice(j, 1)[0]); }
+  return out;
+}
+const FRACTAL = new Map();
+function fractalImage(c, w, h, col) {
+  const W = c.canvas.width, H = c.canvas.height, key = W + "x" + H + col;
+  if (FRACTAL.has(key)) return FRACTAL.get(key);
+  const img = c.createImageData(W, H), n = parseInt(col.slice(1), 16);
+  const cr = (n >> 16) & 255, cg = (n >> 8) & 255, cb = n & 255;
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const x0 = -2.2 + 3.0 * px / W, y0 = -1.1 + 2.2 * py / H;
+    let x = 0, y = 0, i = 0;
+    while (x * x + y * y < 4 && i < 50) { const t = x * x - y * y + x0; y = 2 * x * y + y0; x = t; i++; }
+    const o = (py * W + px) * 4, a = i >= 50 ? 255 : Math.round(255 * Math.sqrt(i / 50) * 0.7);
+    img.data[o] = cr; img.data[o + 1] = cg; img.data[o + 2] = cb; img.data[o + 3] = a;
+  }
+  FRACTAL.set(key, img);
+  return img;
+}
+
+// ---------- シミュレーション ----------
+const VCAP = 1.2;      // 絵が1秒に進める実行回数の上限（速い言語の絵が点滅しないようにする）
+const FASTBAR = 2;     // 1秒に2回を超えて終わる言語は、進捗バーを満タンで表示する
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const S = { bench: "n-body", metric: "secs", plain: true, mode: "loop", speed: 1,
+  running: !reduceMotion, simT: 0, realT: 0, lanes: [] };
+let colors = {};
+
+function readColors() {
+  colors = { ink2: cssv("--ink-2"), grid: cssv("--grid"), track: cssv("--track"), surface: cssv("--surface") };
+  for (const L of LANGS) colors[L.id] = cssv(L.css);
+}
+
+function buildLanes() {
+  const box = document.getElementById("lanes");
+  box.textContent = "";
+  S.lanes = LANGS.map(L => {
+    const row = pick(S.bench, L.id, S.metric, S.plain);
+    const el = document.createElement("div");
+    el.className = "lane" + (row ? "" : " missing");
+    el.innerHTML = `<div class="lname"><i class="swatch"></i><div><b></b><span class="impl"></span><span class="prog"></span></div></div>
+      <canvas aria-hidden="true"></canvas>
+      <div class="tcol"><div class="track"><div class="fill"></div><div class="runner"></div></div>
+        <div class="tmeta"><span class="pct tabnum"></span><span class="rate tabnum"></span></div></div>
+      <div class="lstat"></div>`;
+    el.querySelector(".swatch").style.background = `var(${L.css})`;
+    el.querySelector(".fill").style.background = `var(${L.css})`;
+    el.querySelector(".runner").style.background = `var(${L.css})`;
+    el.querySelector("b").textContent = L.name;
+    el.querySelector(".impl").textContent = L.impl;
+    const prog = el.querySelector(".prog");
+    if (row) {
+      const a = document.createElement("a");
+      a.href = SRC + row.prog + ".html"; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "ソース: " + row.label + (row.flagged ? "（印あり）" : "");
+      prog.appendChild(a);
+    } else {
+      prog.textContent = "条件に合うプログラムなし";
+    }
+    box.appendChild(el);
+    const cv = el.querySelector("canvas");
+    return { L, row, secs: row ? row[S.metric] : null, t: 0, vt: 0, el, cv, ctx: cv.getContext("2d"),
+      fill: el.querySelector(".fill"), runner: el.querySelector(".runner"),
+      pct: el.querySelector(".pct"), rate: el.querySelector(".rate"), stat: el.querySelector(".lstat") };
+  });
+  const fastest = Math.min(...S.lanes.filter(l => l.secs).map(l => l.secs));
+  S.lanes.forEach(l => { l.ratio = l.secs ? l.secs / fastest : null; });
+  sizeCanvases();
+  resetClock();
+  describe();
+}
+
+function sizeCanvases() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const l of S.lanes) {
+    const r = l.cv.getBoundingClientRect();
+    l.cv.width = Math.round(r.width * dpr); l.cv.height = Math.round(r.height * dpr);
+    l.w = r.width; l.h = r.height; l.dpr = dpr;
+  }
+}
+
+function resetClock() {
+  S.simT = 0; S.realT = 0;
+  for (const l of S.lanes) { l.t = 0; l.vt = 0; l.finishedRank = null; }
+  S.finishCount = 0;
+  render(0);
+}
+
+function describe() {
+  const b = BENCH.find(b => b.id === S.bench);
+  const d = document.getElementById("bdesc");
+  d.textContent = "";
+  const strong = document.createElement("b"); strong.textContent = b.id;
+  d.append(strong, `（${b.group}）　${b.desc}`);
+}
+
+function step(dt) {
+  S.realT += dt; S.simT += dt * S.speed;
+  // 動く絵（軌道・パンケーキ・塩基の列）は、最速の言語が VCAP を超えないように全レーンを同じ比率で遅くする
+  const live = S.lanes.filter(l => l.secs), k = Math.min(1, VCAP / (S.speed / Math.min(...live.map(l => l.secs))));
+  for (const l of live) {
+    const rate = S.speed / l.secs;                 // 1秒あたりに終わる回数（画面の時間で）
+    l.t = S.simT / l.secs;
+    if (!(S.mode === "race" && l.t >= 1)) l.vt += rate * k * dt;
+    if (S.mode === "race" && l.t >= 1 && l.finishedRank == null) {
+      // 同じフレームで複数の言語がゴールしても、順位は測定時間の順にする
+      l.finishedRank = 1 + live.filter(o => o.secs < l.secs).length; S.finishCount++;
+    }
+  }
+  if (S.mode === "race" && S.finishCount === S.lanes.filter(l => l.secs).length) setRunning(false);
+}
+
+function render() {
+  const clock = S.mode === "race" ? Math.min(S.simT, Math.max(...S.lanes.filter(l => l.secs).map(l => l.secs))) : S.simT;
+  document.getElementById("clock").textContent = fmtClock(clock);
+  document.getElementById("clocksub").textContent =
+    `測定時間に換算した経過時間（${S.metric === "secs" ? "経過時間" : "CPU 時間"}）・再生速度 ×${S.speed}・画面で見ている時間 ${fmtClock(S.realT)}`;
+  for (const l of S.lanes) drawLane(l);
+  verdict();
+}
+
+function drawLane(l) {
+  const c = l.ctx;
+  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, l.cv.width, l.cv.height);
+  if (!l.secs) {
+    l.stat.textContent = "—"; l.pct.textContent = ""; l.rate.textContent = "";
+    l.fill.style.width = "0"; l.runner.style.display = "none"; return;
+  }
+  const race = S.mode === "race", rate = S.speed / l.secs;
+  const done = race && l.t >= 1;
+  let ph = race ? Math.min(1, l.t) : l.t % 1;
+  const fastBar = !race && rate > FASTBAR;
+  // 描き上げる絵（マンデルブロ集合など）は、1秒に VCAP 回を超えて終わる言語では完成した絵を表示し続ける
+  const vph = race ? ph : (rate > VCAP ? 1 : ph);
+  c.setTransform(l.dpr, 0, 0, l.dpr, 0, 0);
+  VIZ[BENCH.find(b => b.id === S.bench).viz](c, l.w, l.h,
+    { ph: vph, vt: l.vt, col: colors[l.L.id], ink2: colors.ink2, grid: colors.grid, track: colors.track, dpr: l.dpr });
+  const shown = fastBar ? 1 : ph;
+  l.fill.style.width = (shown * 100) + "%";
+  l.runner.style.display = fastBar ? "none" : "";
+  l.runner.style.left = (shown * 100) + "%";
+  l.pct.textContent = fastBar ? "速すぎるのでバーは満タンで表示" : `今回の進み ${(ph * 100).toFixed(ph < 0.1 ? 1 : 0)}%`;
+  l.rate.textContent = rate >= 1 ? `1秒に ${fmtX(rate)} 回` : `1回に ${fmtX(1 / rate)} 秒`;
+  const mb = l.row.memKiB / 1024, mem = mb >= 1000 ? (mb / 1024).toFixed(1) + " GB" : mb.toFixed(1) + " MB";
+  const one = `<span class="big tabnum">${fmtSec(l.secs)}</span><span class="sub">最速の ${fmtX(l.ratio)} 倍・メモリ ${mem}</span>`;
+  const tail = race
+    ? (done ? `<span class="done">ゴール ${l.finishedRank} 位</span>` : `<span>走行中</span>`)
+    : `<span class="done tabnum">完了 ${Math.floor(l.t).toLocaleString("ja-JP")} 回</span>`;
+  l.stat.innerHTML = one + tail;
+}
+
+function verdict() {
+  const v = document.getElementById("verdict");
+  const ok = S.lanes.filter(l => l.secs).sort((a, b) => b.secs - a.secs);
+  if (ok.length < 2) { v.textContent = ""; return; }
+  const slow = ok[0], parts = ok.slice(1).reverse().map(l => `${l.L.name} は ${fmtX(slow.secs / l.secs)} 回`);
+  let s = `いちばん遅い ${slow.L.name} が1回解き終えるまでに、${parts.join("、")}解き終えます。`;
+  if (S.mode === "race") {
+    const fin = S.lanes.filter(l => l.finishedRank).sort((a, b) => a.finishedRank - b.finishedRank);
+    s = fin.length ? "ゴール順: " + fin.map(l => `${l.finishedRank}位 ${l.L.name}（${fmtSec(l.secs)}）`).join("、") + "。" + (fin.length < ok.length ? "残りの言語はまだ走っています。" : "") : s;
+  }
+  const miss = S.lanes.filter(l => !l.secs).map(l => l.L.name);
+  if (miss.length) s += `${miss.join("・")} は、この条件に合う正しく動いたプログラムがありません。「最速の実装」を選ぶと表示されます。`;
+  v.textContent = s;
+}
+
+let last = null;
+function loop(ts) {
+  if (last != null && S.running) step(Math.min(0.1, (ts - last) / 1000));
+  last = ts;
+  if (S.running || needsDraw) { render(); needsDraw = false; }
+  requestAnimationFrame(loop);
+}
+let needsDraw = true;
+
+function setRunning(on) {
+  S.running = on;
+  const b = document.getElementById("play");
+  b.textContent = on ? "一時停止" : "再生";
+  b.setAttribute("aria-label", on ? "一時停止" : "再生");
+  needsDraw = true;
+}
+
+// ---------- まとめの図（ドットプロット）と表 ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function shapePath(shape, x, y, r) {
+  switch (shape) {
+    case "square": return `M${x - r * .88},${y - r * .88}h${r * 1.76}v${r * 1.76}h${-r * 1.76}z`;
+    case "diamond": return `M${x},${y - r * 1.2}L${x + r * 1.2},${y}L${x},${y + r * 1.2}L${x - r * 1.2},${y}z`;
+    case "tri": return `M${x},${y - r * 1.2}L${x + r * 1.1},${y + r * .8}L${x - r * 1.1},${y + r * .8}z`;
+    case "tridown": return `M${x},${y + r * 1.2}L${x + r * 1.1},${y - r * .8}L${x - r * 1.1},${y - r * .8}z`;
+    default: return `M${x - r},${y}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+  }
+}
+
+function summaryData() {
+  const rows = BENCH.map(b => {
+    const v = {};
+    for (const L of LANGS) { const r = pick(b.id, L.id, S.metric, S.plain); if (r) v[L.id] = r[S.metric]; }
+    const best = Math.min(...Object.values(v));
+    const ratio = {}; for (const k in v) ratio[k] = v[k] / best;
+    return { id: b.id, group: b.group, secs: v, ratio };
+  });
+  const gm = { id: "幾何平均", group: "10種類", secs: {}, ratio: {}, n: {} };
+  for (const L of LANGS) {
+    const xs = rows.map(r => r.ratio[L.id]).filter(x => x);
+    gm.ratio[L.id] = Math.exp(xs.reduce((a, x) => a + Math.log(x), 0) / xs.length);
+    gm.n[L.id] = xs.length;
+  }
+  return [gm, ...rows];
+}
+
+function drawLegend() {
+  const lg = document.getElementById("legend"); lg.textContent = "";
+  for (const L of LANGS) {
+    const s = document.createElement("span");
+    const svg = svgEl("svg", { width: 14, height: 14, viewBox: "0 0 14 14", "aria-hidden": "true" });
+    svgEl("path", { d: shapePath(L.shape, 7, 7, 5), fill: `var(${L.css})` }, svg);
+    s.appendChild(svg); s.append(L.name + "（" + L.impl + "）");
+    lg.appendChild(s);
+  }
+}
+
+function drawPlot() {
+  const data = summaryData();
+  const svg = document.getElementById("dotplot"); svg.textContent = "";
+  const W = svg.parentElement.clientWidth - 24, narrow = W < 560;
+  const left = narrow ? 112 : 160, right = 16, top = 26, rowH = 36, H = top + rowH * data.length + 6;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("height", H);
+  const maxR = Math.max(...data.flatMap(d => Object.values(d.ratio)));
+  const ticks = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].filter(t => t <= maxR * 1.6);
+  const hi = Math.max(ticks[ticks.length - 1], maxR * 1.15);
+  const x = v => left + (W - left - right) * Math.log(v) / Math.log(hi);
+  for (const t of ticks) {
+    svgEl("line", { x1: x(t), x2: x(t), y1: top - 4, y2: H - 4, class: t === 1 ? "base" : "grid" }, svg);
+    if (narrow && ![1, 10, 100, 1000].includes(t)) continue;   // 狭い画面では目盛の数字を減らす
+    const tx = svgEl("text", { x: x(t), y: top - 10, "text-anchor": "middle", class: "tabnum" }, svg);
+    tx.textContent = t + "倍";
+  }
+  data.forEach((d, i) => {
+    const y0 = top + i * rowH, cy = y0 + rowH / 2;
+    const g = svgEl("g", {}, svg);
+    const hit = svgEl("rect", { x: 0, y: y0, width: W, height: rowH, rx: 6, class: "rowhit",
+      tabindex: 0, role: "button", "aria-label": rowLabel(d) }, g);
+    if (i === 0) svgEl("line", { x1: 0, x2: W, y1: y0 + rowH, y2: y0 + rowH, class: "grid" }, g);
+    const lab = svgEl("text", { x: 4, y: cy - 2, class: "rlabel" }, g);
+    lab.textContent = narrow ? (SHORT[d.id] || d.id) : d.id;
+    const gl = svgEl("text", { x: 4, y: cy + 13, class: "glabel" }, g); gl.textContent = d.group;
+    if (d.id !== S.bench && i > 0) lab.setAttribute("font-weight", "400"); else if (i > 0) lab.setAttribute("font-weight", "700");
+    LANGS.forEach((L, j) => {
+      const r = d.ratio[L.id]; if (!r) return;
+      const yy = cy + (j - 2) * 4;
+      svgEl("path", { d: shapePath(L.shape, x(r), yy, 5), fill: `var(${L.css})`, stroke: "var(--surface)", "stroke-width": 2,
+        "pointer-events": "none" }, g);
+    });
+    const show = e => showTip(d, e), hide = () => { tip.style.display = "none"; };
+    hit.addEventListener("pointermove", show); hit.addEventListener("pointerleave", hide);
+    hit.addEventListener("focus", e => showTip(d, e)); hit.addEventListener("blur", hide);
+    if (i > 0) {
+      const go = () => { selectBench(d.id); document.getElementById("sim").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" }); };
+      hit.addEventListener("click", go);
+      hit.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    } else hit.style.cursor = "default";
+  });
+  drawTable(data);
+}
+
+const SHORT = { "reverse-complement": "rev-comp", "fannkuch-redux": "fannkuch", "spectral-norm": "spectral" };
+function rowLabel(d) {
+  return d.id + ": " + LANGS.filter(L => d.ratio[L.id]).map(L => `${L.name} ${fmtX(d.ratio[L.id])}倍`).join("、");
+}
+
+const tip = document.getElementById("tip");
+function showTip(d, e) {
+  tip.textContent = "";
+  const h = document.createElement("div"); h.className = "h";
+  h.textContent = d.id === "幾何平均" ? "10種類の幾何平均（最速との比）" : d.id; tip.appendChild(h);
+  if (d.n) {
+    const few = LANGS.filter(L => d.n[L.id] < BENCH.length);
+    if (few.length) { const m = document.createElement("div"); m.className = "m";
+      m.textContent = few.map(L => `${L.name} は ${d.n[L.id]} 種類で計算`).join("、"); tip.appendChild(m); }
+  }
+  LANGS.filter(L => d.ratio[L.id]).sort((a, b) => d.ratio[a.id] - d.ratio[b.id]).forEach(L => {
+    const r = document.createElement("div"); r.className = "r";
+    const k = document.createElement("i"); k.style.background = `var(${L.css})`;
+    const n = document.createElement("span"); n.textContent = L.name;
+    const v = document.createElement("b");
+    v.textContent = (d.secs[L.id] ? fmtSec(d.secs[L.id]) + "・" : "") + fmtX(d.ratio[L.id]) + "倍";
+    r.append(k, n, v); tip.appendChild(r);
+  });
+  tip.style.display = "block";
+  let px, py;
+  if (e.clientX != null && e.type !== "focus") { px = e.clientX; py = e.clientY; }
+  else { const b = e.target.getBoundingClientRect(); px = b.left + b.width * 0.6; py = b.top + b.height; }
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(innerWidth - tw - 8, px + 14)) + "px";
+  tip.style.top = Math.max(8, Math.min(innerHeight - th - 8, py + 14)) + "px";
+}
+
+function drawTable(data) {
+  const t = document.getElementById("table"); t.textContent = "";
+  const hr = t.insertRow(); const th0 = document.createElement("th"); th0.textContent = "ベンチマーク"; hr.appendChild(th0);
+  for (const L of LANGS) { const th = document.createElement("th"); th.textContent = L.name; hr.appendChild(th); }
+  for (const d of data) {
+    const tr = t.insertRow(); tr.insertCell().textContent = d.id;
+    for (const L of LANGS) {
+      const r = d.ratio[L.id];
+      tr.insertCell().textContent = !r ? "—" : (d.secs[L.id] ? `${fmtSec(d.secs[L.id])}（${fmtX(r)}倍）` : `${fmtX(r)}倍`);
+    }
+  }
+}
+
+// ---------- 操作 ----------
+function buildChips() {
+  const box = document.getElementById("chips");
+  for (const b of BENCH) {
+    const c = document.createElement("button"); c.className = "chip"; c.dataset.id = b.id;
+    c.textContent = b.id; c.setAttribute("aria-pressed", b.id === S.bench);
+    c.addEventListener("click", () => selectBench(b.id));
+    box.appendChild(c);
+  }
+}
+function selectBench(id) {
+  S.bench = id;
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c.dataset.id === id));
+  buildLanes(); drawPlot(); if (!reduceMotion) setRunning(true); needsDraw = true;
+}
+document.querySelectorAll(".seg").forEach(seg => {
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    const k = seg.dataset.key, v = b.dataset.v;
+    if (k === "speed") { S.speed = parseFloat(v); }
+    else {
+      if (k === "plain") S.plain = v === "1"; else if (k === "metric") S.metric = v; else S.mode = v;
+      buildLanes(); drawPlot(); if (!reduceMotion) setRunning(true);
+    }
+    needsDraw = true;
+  });
+});
+document.getElementById("play").addEventListener("click", () => {
+  const allDone = S.mode === "race" && S.finishCount > 0 && S.finishCount === S.lanes.filter(l => l.secs).length;
+  if (allDone) resetClock();
+  setRunning(!S.running || allDone);
+});
+document.getElementById("reset").addEventListener("click", () => { resetClock(); needsDraw = true; });
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { sizeCanvases(); drawPlot(); needsDraw = true; }, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); FRACTAL.clear(); drawPlot(); needsDraw = true; });
+
+readColors(); buildChips(); drawLegend(); buildLanes(); drawPlot(); setRunning(S.running);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

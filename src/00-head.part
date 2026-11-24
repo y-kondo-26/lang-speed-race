@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>5言語の速さ比べ</title>
+<meta name="description" content="C++・Rust・Go・JavaScript・Python が同じ問題を解いた実測時間（The Computer Language Benchmarks Game）を、アニメーションで再生して比べるページ">
+<style>
+:root {
+  color-scheme: light;
+  --plane: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ring: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --c-cpp: #2a78d6;
+  --c-rust: #eb6834;
+  --c-go: #1baf7a;
+  --c-node: #eda100;
+  --c-python: #e87ba4;
+  --track: #ebeae5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #9a988f;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --ring: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --c-cpp: #3987e5;
+    --c-rust: #d95926;
+    --c-go: #199e70;
+    --c-node: #c98500;
+    --c-python: #d55181;
+    --track: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #9a988f;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --ring: rgba(255,255,255,0.10);
+  --accent: #3987e5;
+  --c-cpp: #3987e5;
+  --c-rust: #d95926;
+  --c-go: #199e70;
+  --c-node: #c98500;
+  --c-python: #d55181;
+  --track: #2c2c2a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.7 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", "Noto Sans JP", sans-serif;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: 40px 0 8px; }
+h1 { font-size: 30px; line-height: 1.3; margin: 0 0 8px; letter-spacing: .01em; }
+h2 { font-size: 21px; line-height: 1.4; margin: 0 0 6px; }
+h3 { font-size: 16px; margin: 0 0 4px; }
+p { margin: 0 0 10px; }
+.lead { color: var(--ink-2); max-width: 760px; }
+.note { color: var(--muted); font-size: 13px; }
+a { color: var(--accent); }
+section { margin: 28px 0; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 12px;
+  padding: 18px;
+}
+.tabnum { font-variant-numeric: tabular-nums; }
+
+/* ---- controls ---- */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 0 0 12px; }
+.ctl { display: flex; align-items: center; gap: 8px; }
+.ctl > .lbl { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 8px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 13px; padding: 4px 10px; border: 0; background: transparent;
+  color: var(--ink-2); cursor: pointer; border-right: 1px solid var(--axis);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible, .chip:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn {
+  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface); color: var(--ink);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.chip {
+  font: inherit; font-size: 13px; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface); color: var(--ink-2);
+}
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.bench-desc { margin: 4px 0 14px; color: var(--ink-2); font-size: 14px; }
+.bench-desc b { color: var(--ink); }
+
+/* ---- race ---- */
+.clock { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; margin-bottom: 10px; }
+.clock .t { font-size: 26px; font-weight: 600; }
+.clock .sub { color: var(--muted); font-size: 13px; }
+.lane {
+  display: grid; grid-template-columns: 132px 140px minmax(0,1fr) 196px; gap: 14px;
+  align-items: center; padding: 10px 0; border-top: 1px solid var(--grid);
+}
+.lane:first-of-type { border-top: 0; }
+.lname { display: flex; gap: 8px; align-items: flex-start; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; margin-top: 7px; flex: none; }
+.lname b { display: block; font-size: 15px; }
+.lname span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.lane canvas { width: 140px; height: 84px; border-radius: 8px; background: var(--surface-2); display: block; }
+.track { position: relative; height: 12px; border-radius: 999px; background: var(--track); }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; width: 0; }
+.runner {
+  position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface); left: 0;
+}
+.tmeta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; gap: 8px; }
+.lstat { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.lstat .big { font-size: 20px; font-weight: 600; color: var(--ink); }
+.lstat .done { color: var(--ink); font-weight: 600; }
+.lstat > span { display: block; }
+.lane.missing { opacity: .55; }
+.verdict { margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; font-size: 14px; }
+
+/* ---- summary chart ---- */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); margin: 8px 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { overflow: visible; }
+#dotplot { width: 100%; display: block; }
+#dotplot .rowhit { fill: transparent; cursor: pointer; }
+#dotplot .rowhit:hover, #dotplot .rowhit:focus { fill: var(--surface-2); outline: none; }
+#dotplot text { fill: var(--ink-2); font-size: 12px; }
+#dotplot .rlabel { fill: var(--ink); font-size: 13px; }
+#dotplot .glabel { fill: var(--muted); font-size: 11px; }
+#dotplot .grid { stroke: var(--grid); stroke-width: 1; }
+#dotplot .base { stroke: var(--axis); stroke-width: 1; }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 190px; display: none;
+}
+.tip .h { font-weight: 600; margin-bottom: 4px; font-size: 13px; }
+.tip .m { color: var(--muted); margin: -2px 0 4px; }
+.tip .r { display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: center; }
+.tip .r i { display: block; height: 2px; border-radius: 2px; }
+.tip .r b { font-variant-numeric: tabular-nums; }
+details.tbl { margin-top: 10px; }
+details.tbl summary { cursor: pointer; color: var(--ink-2); font-size: 14px; }
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13px; margin-top: 8px; min-width: 640px; width: 100%; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: right; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; }
+
+/* ---- explanation ---- */
+.models { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.model { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; font-size: 14px; }
+.model .tag { font-size: 12px; color: var(--muted); }
+ol.cav { padding-left: 1.3em; margin: 0; }
+ol.cav li { margin-bottom: 8px; }
+footer { padding: 24px 0 48px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 760px) {
+  h1 { font-size: 24px; }
+  .lane { grid-template-columns: minmax(0,1fr) 100px; grid-template-areas: "name canvas" "stat canvas" "track track"; gap: 2px 12px; padding: 8px 0; }
+  .lname { grid-area: name; }
+  .lname .impl { display: none; }
+  .lane canvas { grid-area: canvas; width: 100px; height: 60px; }
+  .lane .tcol { grid-area: track; margin-top: 4px; }
+  .lstat { grid-area: stat; font-size: 12px; line-height: 1.45; }
+  .lstat .big { font-size: 16px; }
+  .lstat > span { display: inline; margin-right: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runner { transition: none; }
+}
+</style>
+</head>

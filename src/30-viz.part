@@ -1,0 +1,177 @@
+
+// ---------- 言語とベンチマークの定義 ----------
+const LANGS = [
+  { id: "cpp",    name: "C++",        impl: "g++ 14.2.0",      css: "--c-cpp",    shape: "circle" },
+  { id: "rust",   name: "Rust",       impl: "rustc 1.84.1",    css: "--c-rust",   shape: "square" },
+  { id: "go",     name: "Go",         impl: "Go 1.23.1",       css: "--c-go",     shape: "diamond" },
+  { id: "node",   name: "JavaScript", impl: "Node.js 23.8.0",  css: "--c-node",   shape: "tri" },
+  { id: "python", name: "Python",     impl: "CPython 3.13.0",  css: "--c-python", shape: "tridown" },
+];
+const BENCH = [
+  { id: "n-body", group: "計算", viz: "orbit",
+    desc: "太陽・木星・土星・天王星・海王星の5天体の軌道を5,000万ステップ計算します。浮動小数点の掛け算と平方根を繰り返す問題です。" },
+  { id: "spectral-norm", group: "計算", viz: "matrix",
+    desc: "式で決まる5,500×5,500の行列について、行列とベクトルの掛け算を繰り返してスペクトルノルムを求めます。" },
+  { id: "mandelbrot", group: "計算", viz: "fractal",
+    desc: "16,000×16,000画素のマンデルブロ集合を計算し、白黒画像として出力します。画素ごとに複素数の計算を最大50回繰り返します。" },
+  { id: "fannkuch-redux", group: "計算", viz: "pancake",
+    desc: "12枚のパンケーキの並び方（12! ≒ 4.8億通り）をすべて調べ、先頭から裏返す操作の回数を数えます。配列の要素の入れ替えが中心の問題です。" },
+  { id: "binary-trees", group: "メモリ", viz: "tree",
+    desc: "深さ21までの二分木を数百万個作っては捨てます。メモリの確保と解放（GC を含む）の速さを測る問題です。" },
+  { id: "fasta", group: "文字列・入出力", viz: "stream",
+    desc: "乱数と決まった表から、DNA の塩基配列（A・C・G・T）を2億5,000万文字生成して出力します。" },
+  { id: "k-nucleotide", group: "文字列・入出力", viz: "count",
+    desc: "1億2,500万文字の塩基配列を読み、長さ1・2の全パターンと、指定された5つの長いパターンの出現回数をハッシュ表で数えます。" },
+  { id: "reverse-complement", group: "文字列・入出力", viz: "revcomp",
+    desc: "約10億文字の塩基配列を読み、配列を逆順にしてから相補塩基（A↔T、C↔G）に置き換えて出力します。読み書きの量が多い問題です。" },
+  { id: "regex-redux", group: "ライブラリ", viz: "regex",
+    desc: "5,000万文字の塩基配列に、9種類の正規表現で一致数を数え、5種類の置換を行います。各言語とも C で書かれた正規表現エンジンを使えます。" },
+  { id: "pidigits", group: "ライブラリ", viz: "digits",
+    desc: "円周率を1万桁計算します。最速のプログラムはどの言語も多倍長整数ライブラリ GMP（C で書かれている）を使うので、言語の差は小さくなります。" },
+];
+const SRC = "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/";
+const PI = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679";
+
+function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// 条件に合うプログラムのうち、指標が最小のものを返す（なければ null）
+function pick(bench, lang, metric, plain) {
+  let best = null;
+  for (const r of ROWS) {
+    if (r.bench !== bench || r.lang !== lang) continue;
+    if (plain && r.flagged) continue;
+    if (!best || r[metric] < best[metric]) best = r;
+  }
+  return best;
+}
+
+function fmtSec(s) {
+  if (s < 10) return s.toFixed(2) + " 秒";
+  if (s < 100) return s.toFixed(1) + " 秒";
+  return Math.round(s).toLocaleString("ja-JP") + " 秒";
+}
+function fmtX(x) { return x < 10 ? x.toFixed(1) : Math.round(x).toLocaleString("ja-JP"); }
+function fmtClock(s) {
+  const m = Math.floor(s / 60), r = s - m * 60;
+  return m + ":" + (r < 10 ? "0" : "") + r.toFixed(1);
+}
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// ---------- レーンの絵 ----------
+// s.ph: 今回の実行の進み具合 0〜1, s.vt: 見た目用の時間（実行回数単位）, s.col: 言語の色
+const VIZ = {
+  orbit(c, w, h, s) {
+    const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 5;
+    const radii = [0.34, 0.55, 0.77, 1].map(k => k * R);
+    const period = [1, 2.48, 7.08, 13.9];          // 木星を1とした公転周期の比
+    c.fillStyle = s.ink2; c.beginPath(); c.arc(cx, cy, 4, 0, 7); c.fill();
+    radii.forEach((r, i) => {
+      c.strokeStyle = s.grid; c.lineWidth = 1; c.beginPath(); c.arc(cx, cy, r, 0, 7); c.stroke();
+      const a = -Math.PI / 2 + 2 * Math.PI * s.vt / period[i];
+      // 軌跡（直近の動き）
+      c.strokeStyle = hexA(s.col, 0.45); c.lineWidth = 2; c.beginPath();
+      c.arc(cx, cy, r, a - 0.6, a); c.stroke();
+      c.fillStyle = s.col; c.beginPath(); c.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), 3.2, 0, 7); c.fill();
+    });
+  },
+  matrix(c, w, h, s) {
+    const cols = 22, rows = 12, cw = w / cols, ch = h / rows;
+    const it = s.ph * 10, k = Math.floor(it), f = it - k;   // 1回の実行で10回反復する
+    const n = Math.floor(f * cols * rows);
+    for (let i = 0; i < cols * rows; i++) {
+      const x = i % cols, y = Math.floor(i / cols);
+      const lvl = Math.min(1, (k + (i < n ? 1 : 0)) / 10);
+      c.fillStyle = lvl > 0 ? hexA(s.col, 0.15 + 0.85 * lvl * (0.6 + 0.4 * Math.abs(Math.sin(x * 0.7 + y)))) : s.track;
+      c.fillRect(x * cw + 0.5, y * ch + 0.5, cw - 1, ch - 1);
+    }
+  },
+  fractal(c, w, h, s) {
+    const img = fractalImage(c, w, h, s.col);
+    const rowsDone = Math.floor(s.ph * img.height);
+    c.putImageData(img, 0, 0, 0, 0, img.width, rowsDone);
+    if (s.ph < 1) { c.fillStyle = s.col; c.fillRect(0, rowsDone / s.dpr, w, 1.5); }
+  },
+  pancake(c, w, h, s) {
+    const n = 9, step = Math.floor(s.vt * 400), perm = nthPerm(n, step);
+    const bw = (w - 12) / n;
+    for (let i = 0; i < n; i++) {
+      const bh = 8 + (h - 18) * (perm[i] + 1) / n;
+      c.fillStyle = i === step % n ? s.col : hexA(s.col, 0.45);
+      c.fillRect(6 + i * bw + 1, h - 5 - bh, bw - 2, bh);
+    }
+  },
+  tree(c, w, h, s) {
+    const depth = 6, total = 2 ** depth - 1;
+    const ph = (s.ph * 2) % 1, shown = s.ph >= 1 ? total : Math.floor(ph * total) + 1;   // 1回の実行で2本の木を作る
+    const pos = i => { const d = Math.floor(Math.log2(i + 1)), k = i + 1 - 2 ** d;
+      return [w * (k + 0.5) / 2 ** d, 8 + d * (h - 16) / (depth - 1)]; };
+    c.strokeStyle = s.grid; c.lineWidth = 1;
+    for (let i = 1; i < shown; i++) { const [x, y] = pos(i), [px, py] = pos(Math.floor((i - 1) / 2));
+      c.beginPath(); c.moveTo(px, py); c.lineTo(x, y); c.stroke(); }
+    c.fillStyle = s.col;
+    for (let i = 0; i < shown; i++) { const [x, y] = pos(i); c.beginPath(); c.arc(x, y, i < 15 ? 2.6 : 1.8, 0, 7); c.fill(); }
+  },
+  stream(c, w, h, s, opt = {}) {
+    const off = Math.floor(s.vt * 240), cols = 14, rows = opt.rows || 5;
+    c.font = "600 10px ui-monospace, Menlo, monospace"; c.textBaseline = "middle";
+    const cw = (w - 8) / cols, ch = h / rows;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const k = off + y * cols + x, b = "ACGT"[hash(k) & 3];
+      let hit = opt.regex && (hash(Math.floor(k / 4)) % 9 === 0);
+      if (opt.comp && y % 2 === 1) { const t = "ACGT"[hash(off + (y - 1) * cols + (cols - 1 - x)) & 3]; c.fillStyle = s.col;
+        c.fillText({ A: "T", C: "G", G: "C", T: "A" }[t], 4 + x * cw, ch * (y + 0.5)); continue; }
+      if (hit) { c.fillStyle = hexA(s.col, 0.35); c.fillRect(2 + x * cw, ch * y + 1, cw, ch - 2); }
+      c.fillStyle = opt.comp ? s.ink2 : (y === rows - 1 ? s.col : s.ink2);
+      c.fillText(b, 4 + x * cw, ch * (y + 0.5));
+    }
+  },
+  revcomp(c, w, h, s) { VIZ.stream(c, w, h, s, { comp: true, rows: 6 }); },
+  regex(c, w, h, s) { VIZ.stream(c, w, h, s, { regex: true }); },
+  count(c, w, h, s) {
+    const freq = [30.3, 19.8, 19.8, 30.2], bw = (w - 20) / 4;
+    c.font = "600 11px ui-monospace, Menlo, monospace"; c.textAlign = "center";
+    for (let i = 0; i < 4; i++) {
+      const bh = (h - 22) * Math.min(1, s.ph * freq[i] / 30.3);
+      c.fillStyle = s.col; c.fillRect(10 + i * bw + 4, h - 16 - bh, bw - 8, bh);
+      c.fillStyle = s.ink2; c.fillText("ACGT"[i], 10 + i * bw + bw / 2, h - 6);
+    }
+    c.textAlign = "start";
+  },
+  digits(c, w, h, s) {
+    const n = Math.floor(s.ph * 60), per = 15;
+    c.font = "600 11px ui-monospace, Menlo, monospace"; c.textBaseline = "middle";
+    for (let i = 0; i < n; i++) {
+      const ch = i === 0 ? "3." : PI[i];
+      c.fillStyle = i === n - 1 && s.ph < 1 ? s.col : s.ink2;
+      c.fillText(ch, 6 + (i % per) * ((w - 10) / per), 12 + Math.floor(i / per) * 19);
+    }
+  },
+};
+
+function hash(k) { k = Math.imul(k ^ (k >>> 15), 0x2c1b3c6d); k = Math.imul(k ^ (k >>> 12), 0x297a2d39); return (k ^ (k >>> 15)) >>> 0; }
+function nthPerm(n, k) {
+  const a = [...Array(n).keys()], out = [];
+  let f = 1; for (let i = 2; i <= n; i++) f *= i;
+  k = k % f;
+  for (let i = n; i > 0; i--) { f /= i; const j = Math.floor(k / f); k %= f; out.push(a.splice(j, 1)[0]); }
+  return out;
+}
+const FRACTAL = new Map();
+function fractalImage(c, w, h, col) {
+  const W = c.canvas.width, H = c.canvas.height, key = W + "x" + H + col;
+  if (FRACTAL.has(key)) return FRACTAL.get(key);
+  const img = c.createImageData(W, H), n = parseInt(col.slice(1), 16);
+  const cr = (n >> 16) & 255, cg = (n >> 8) & 255, cb = n & 255;
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const x0 = -2.2 + 3.0 * px / W, y0 = -1.1 + 2.2 * py / H;
+    let x = 0, y = 0, i = 0;
+    while (x * x + y * y < 4 && i < 50) { const t = x * x - y * y + x0; y = 2 * x * y + y0; x = t; i++; }
+    const o = (py * W + px) * 4, a = i >= 50 ? 255 : Math.round(255 * Math.sqrt(i / 50) * 0.7);
+    img.data[o] = cr; img.data[o + 1] = cg; img.data[o + 2] = cb; img.data[o + 3] = a;
+  }
+  FRACTAL.set(key, img);
+  return img;
+}
